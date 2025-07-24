@@ -18,7 +18,7 @@ export async function getDevStatus(): Promise<string> {
   try {
     logger.debug('Getting dev server status');
     
-    const processManager = new ProcessManager();
+    const processManager = ProcessManager.getInstance();
     const status = await processManager.getStatus();
     
     if (!status) {

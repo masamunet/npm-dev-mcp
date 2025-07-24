@@ -18,7 +18,7 @@ export async function stopDevServer(): Promise<string> {
   try {
     logger.info('Stopping dev server');
     
-    const processManager = new ProcessManager();
+    const processManager = ProcessManager.getInstance();
     
     // Get current status before stopping
     const currentStatus = await processManager.getStatus();

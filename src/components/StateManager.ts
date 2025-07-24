@@ -11,7 +11,7 @@ export interface ServerState {
   devProcess?: {
     pid: number;
     directory: string;
-    status: 'running' | 'stopped' | 'error';
+    status: 'running' | 'stopped' | 'error' | 'starting';
     startTime: string;
     ports: number[];
     command: string;
@@ -162,7 +162,7 @@ export class StateManager {
         status: process.status,
         startTime: process.startTime.toISOString(),
         ports: process.ports,
-        command: process.command
+        command: 'npm run dev'
       };
     }
 
@@ -227,6 +227,22 @@ export class StateManager {
       lastHealthy: state.healthStatus?.lastHealthy,
       consecutiveFailures: state.healthStatus?.consecutiveFailures || 0
     };
+  }
+
+  /**
+   * 開発プロセス状態をクリア
+   */
+  async clearDevProcessState(): Promise<void> {
+    try {
+      const currentState = await this.loadState();
+      if (currentState) {
+        const { devProcess, ...restState } = currentState;
+        await this.saveState(restState);
+        this.logger.debug('Dev process state cleared');
+      }
+    } catch (error) {
+      this.logger.error('Failed to clear dev process state', { error });
+    }
   }
 
   /**

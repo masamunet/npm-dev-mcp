@@ -50,7 +50,7 @@ export async function startDevServer(args: { directory?: string }): Promise<stri
     const env = await envLoader.prepareEnvironment(envPath);
     
     // Start the dev server
-    const processManager = new ProcessManager();
+    const processManager = ProcessManager.getInstance();
     const devProcess = await processManager.startDevServer(targetDirectory, env);
     
     // Wait a moment to get initial status

@@ -26,7 +26,7 @@ export async function getDevLogs(args: { lines?: number }): Promise<string> {
     const requestedLines = args.lines || 50;
     logger.debug(`Getting dev server logs`, { lines: requestedLines });
     
-    const processManager = new ProcessManager();
+    const processManager = ProcessManager.getInstance();
     const status = await processManager.getStatus();
     
     if (!status) {

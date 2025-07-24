@@ -134,7 +134,7 @@ export class HealthChecker {
   /**
    * ProcessManagerの状態をチェック
    */
-  private async checkProcessManager(): boolean {
+  private async checkProcessManager(): Promise<boolean> {
     try {
       const processManager = ProcessManager.getInstance();
       // ProcessManagerが正常に動作するかテスト
@@ -149,7 +149,7 @@ export class HealthChecker {
   /**
    * 開発サーバーの状態をチェック
    */
-  private async checkDevServer(): boolean {
+  private async checkDevServer(): Promise<boolean> {
     try {
       const processManager = ProcessManager.getInstance();
       const currentProcess = processManager.getCurrentProcess();

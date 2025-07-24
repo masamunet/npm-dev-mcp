@@ -18,7 +18,7 @@ export async function restartDevServer(): Promise<string> {
   try {
     logger.info('Restarting dev server');
     
-    const processManager = new ProcessManager();
+    const processManager = ProcessManager.getInstance();
     
     // Get current status before restarting
     const previousStatus = await processManager.getStatus();

@@ -8,6 +8,7 @@ import { ProjectContextManager } from '../context/ProjectContextManager.js';
 import { StateManager } from './StateManager.js';
 
 export class ProcessManager {
+  private static instance: ProcessManager | null = null;
   private logger = Logger.getInstance();
   private currentProcess: DevProcess | null = null;
   private childProcess: ChildProcess | null = null;
@@ -17,6 +18,18 @@ export class ProcessManager {
   constructor() {
     this.logManager = new LogManager();
     this.portDetector = new PortDetector();
+    
+    // 既存のプロセス状態を復元（非同期で実行）
+    this.restoreProcessState().catch(error => {
+      this.logger.warn('Failed to restore process state during construction', { error });
+    });
+  }
+
+  static getInstance(): ProcessManager {
+    if (!ProcessManager.instance) {
+      ProcessManager.instance = new ProcessManager();
+    }
+    return ProcessManager.instance;
   }
 
   async startDevServer(
@@ -177,6 +190,10 @@ export class ProcessManager {
     return { ...this.currentProcess };
   }
 
+  getCurrentProcess(): DevProcess | null {
+    return this.currentProcess;
+  }
+
   private async isCurrentProcessRunning(): Promise<boolean> {
     if (!this.currentProcess) {
       return false;
@@ -284,6 +301,42 @@ export class ProcessManager {
       });
     } catch (error) {
       this.logger.warn('StateManager not available for state saving', { error });
+    }
+  }
+
+  /**
+   * StateManagerから既存のプロセス状態を復元
+   */
+  private async restoreProcessState(): Promise<void> {
+    try {
+      const stateManager = StateManager.getInstance();
+      const state = await stateManager.loadState();
+      
+      if (state?.devProcess) {
+        const processInfo = state.devProcess;
+        
+        // プロセスがまだ実行中かチェック
+        if (await isProcessRunning(processInfo.pid)) {
+          this.currentProcess = {
+            pid: processInfo.pid,
+            directory: processInfo.directory,
+            status: 'running',
+            startTime: new Date(processInfo.startTime),
+            ports: processInfo.ports
+          };
+          
+          this.logger.info(`Restored existing dev server process: PID ${processInfo.pid}`);
+          
+          // 既存プロセスのstdout/stderrを再接続することはできないため、
+          // ログマネージャーは新しいプロセス起動時のみ有効
+        } else {
+          // プロセスが存在しない場合は状態をクリア
+          await stateManager.clearDevProcessState();
+          this.logger.debug('Cleared stale process state');
+        }
+      }
+    } catch (error) {
+      this.logger.warn('Failed to restore process state', { error });
     }
   }
 }
