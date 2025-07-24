@@ -182,6 +182,7 @@ Claude Codeの設定ファイルを開きます：
 #### 4.2 MCPサーバーの追加
 設定ファイルにnpm-dev-mcpサーバーを追加：
 
+**方法1: 直接パス指定（推奨）**
 ```json
 {
   "mcpServers": {
@@ -193,10 +194,23 @@ Claude Codeの設定ファイルを開きます：
 }
 ```
 
+**方法2: npx経由（--mcpフラグ使用）**
+```json
+{
+  "mcpServers": {
+    "npm-dev-mcp": {
+      "command": "npx",
+      "args": ["npm-dev-mcp", "--mcp"]
+    }
+  }
+}
+```
+
 **注意事項:**
-- `args`の配列内のパスは**絶対パス**で指定してください
+- 方法1の`args`の配列内のパスは**絶対パス**で指定してください
 - 例: `"/Users/username/projects/npm-dev-mcp/dist/index.js"`
 - 相対パスや`~`は使用できません
+- 方法2では`--mcp`フラグが必要です（MCPサーバーモードを強制）
 
 #### 4.3 Claude Codeの再起動
 設定を追加した後、Claude Codeを再起動すると、npm-dev-mcpサーバーが利用可能になります。
