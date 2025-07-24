@@ -29,6 +29,8 @@ export class CommandRegistry {
   }
 
   async executeCommand(args: string[]): Promise<void> {
-    await this.handler.execute(args);
+    // Filter out the --mcp flag if present (handled at higher level)
+    const filteredArgs = args.filter(arg => arg !== '--mcp');
+    await this.handler.execute(filteredArgs);
   }
 }

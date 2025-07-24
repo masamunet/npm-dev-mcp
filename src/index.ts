@@ -164,6 +164,12 @@ process.on('SIGTERM', async () => {
 function determineRunMode(): 'mcp' | 'cli' {
   // If no arguments or only stdio-related arguments, run as MCP server
   const args = process.argv.slice(2);
+  
+  // If executed via npx npm-dev-mcp with --mcp flag, run as MCP server
+  if (args.includes('--mcp')) {
+    return 'mcp';
+  }
+  
   return args.length === 0 ? 'mcp' : 'cli';
 }
 
