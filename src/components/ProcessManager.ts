@@ -5,6 +5,7 @@ import { Logger } from '../utils/logger.js';
 import { LogManager } from './LogManager.js';
 import { PortDetector } from './PortDetector.js';
 import { ProjectContextManager } from '../context/ProjectContextManager.js';
+import { StateManager } from './StateManager.js';
 
 export class ProcessManager {
   private logger = Logger.getInstance();
@@ -193,6 +194,7 @@ export class ProcessManager {
       this.logger.debug('Process spawned successfully');
       if (this.currentProcess) {
         this.currentProcess.status = 'running';
+        this.saveCurrentState();
       }
     });
 
@@ -200,6 +202,7 @@ export class ProcessManager {
       this.logger.error('Process error', { error });
       if (this.currentProcess) {
         this.currentProcess.status = 'error';
+        this.saveCurrentState();
       }
     });
 
@@ -207,6 +210,7 @@ export class ProcessManager {
       this.logger.info(`Process exited with code ${code}, signal ${signal}`);
       if (this.currentProcess) {
         this.currentProcess.status = 'stopped';
+        this.saveCurrentState();
       }
     });
 
@@ -219,6 +223,7 @@ export class ProcessManager {
           // Merge with existing ports
           const allPorts = [...this.currentProcess.ports, ...ports];
           this.currentProcess.ports = [...new Set(allPorts)]; // Remove duplicates
+          this.saveCurrentState();
         }
       });
     }
@@ -266,5 +271,19 @@ export class ProcessManager {
 
   getLogManager(): LogManager {
     return this.logManager;
+  }
+
+  /**
+   * 現在の状態をStateManagerに保存
+   */
+  private saveCurrentState(): void {
+    try {
+      const stateManager = StateManager.getInstance();
+      stateManager.saveDevProcessState(this.currentProcess).catch(error => {
+        this.logger.warn('Failed to save process state', { error });
+      });
+    } catch (error) {
+      this.logger.warn('StateManager not available for state saving', { error });
+    }
   }
 }

@@ -10,6 +10,9 @@ import {
 import { Logger } from './utils/logger.js';
 import { ProjectContextManager } from './context/ProjectContextManager.js';
 import { CommandRegistry } from './cli/CommandRegistry.js';
+import { HealthChecker } from './components/HealthChecker.js';
+import { StateManager } from './components/StateManager.js';
+import { HealthEndpoint } from './components/HealthEndpoint.js';
 
 // Import tool schemas and handlers
 import { scanProjectDirsSchema, scanProjectDirs } from './tools/scanProjectDirs.js';
@@ -18,6 +21,8 @@ import { getDevStatusSchema, getDevStatus } from './tools/getDevStatus.js';
 import { getDevLogsSchema, getDevLogs } from './tools/getDevLogs.js';
 import { stopDevServerSchema, stopDevServer } from './tools/stopDevServer.js';
 import { restartDevServerSchema, restartDevServer } from './tools/restartDevServer.js';
+import { getHealthStatusSchema, getHealthStatus } from './tools/getHealthStatus.js';
+import { recoverFromStateSchema, recoverFromState } from './tools/recoverFromState.js';
 
 // Initialize logger
 const logger = Logger.getInstance();
@@ -44,6 +49,8 @@ const tools = [
   getDevLogsSchema,
   stopDevServerSchema,
   restartDevServerSchema,
+  getHealthStatusSchema,
+  recoverFromStateSchema,
 ];
 
 // Handle list tools request
@@ -122,6 +129,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ],
         };
         
+      case 'get_health_status':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: await getHealthStatus(args as { detailed?: boolean }),
+            },
+          ],
+        };
+        
+      case 'recover_from_state':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: await recoverFromState(args as { force?: boolean }),
+            },
+          ],
+        };
+        
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -150,12 +177,38 @@ server.onerror = (error) => {
 
 process.on('SIGINT', async () => {
   logger.info('Received SIGINT, shutting down gracefully...');
+  
+  // ヘルスチェックを停止
+  const healthChecker = HealthChecker.getInstance();
+  healthChecker.cleanup();
+  
+  // 状態管理をクリーンアップ
+  const stateManager = StateManager.getInstance();
+  stateManager.cleanup();
+  
+  // ヘルスエンドポイントを停止
+  const healthEndpoint = HealthEndpoint.getInstance();
+  healthEndpoint.cleanup();
+  
   await server.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   logger.info('Received SIGTERM, shutting down gracefully...');
+  
+  // ヘルスチェックを停止
+  const healthChecker = HealthChecker.getInstance();
+  healthChecker.cleanup();
+  
+  // 状態管理をクリーンアップ
+  const stateManager = StateManager.getInstance();
+  stateManager.cleanup();
+  
+  // ヘルスエンドポイントを停止
+  const healthEndpoint = HealthEndpoint.getInstance();
+  healthEndpoint.cleanup();
+  
   await server.close();
   process.exit(0);
 });
@@ -179,8 +232,40 @@ async function startMCPServer() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
     
+    // 状態管理を初期化
+    const stateManager = StateManager.getInstance();
+    await stateManager.initialize();
+    
+    // ヘルスチェックを開始
+    const healthChecker = HealthChecker.getInstance();
+    healthChecker.startPeriodicHealthCheck(30000); // 30秒間隔
+    
+    // ヘルスエンドポイントを開始（環境変数で有効化）
+    const healthEndpoint = HealthEndpoint.getInstance({
+      port: parseInt(process.env.HEALTH_PORT || '8080'),
+      host: process.env.HEALTH_HOST || '127.0.0.1',
+      enabled: process.env.HEALTH_ENDPOINT === 'true',
+      path: process.env.HEALTH_PATH || '/health'
+    });
+    
+    if (process.env.HEALTH_ENDPOINT === 'true') {
+      try {
+        await healthEndpoint.start();
+      } catch (error) {
+        logger.warn('Failed to start health endpoint', { error });
+      }
+    }
+    
     logger.info('npm-dev-mcp server started successfully');
     logger.info('Available tools: ' + tools.map(t => t.name).join(', '));
+    logger.info('Health monitoring started (30s interval)');
+    logger.info('State management initialized');
+    
+    if (process.env.HEALTH_ENDPOINT === 'true') {
+      logger.info('Health endpoint available', {
+        url: `http://${process.env.HEALTH_HOST || '127.0.0.1'}:${process.env.HEALTH_PORT || '8080'}${process.env.HEALTH_PATH || '/health'}`
+      });
+    }
     
   } catch (error) {
     logger.error('Failed to start server', { error });

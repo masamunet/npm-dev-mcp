@@ -130,6 +130,59 @@ npm run devプロセスを再起動します。
 }
 ```
 
+### get_health_status
+MCPサーバー自身のヘルス状態を取得します。
+
+**パラメータ:**
+- `detailed` (オプション): 詳細なヘルスレポートを取得するかどうか（デフォルト: false）
+
+```json
+{
+  "success": true,
+  "message": "MCPサーバーは正常状態です",
+  "health": {
+    "isHealthy": true,
+    "uptime": 300,
+    "devServerStatus": "running",
+    "memoryUsage": {
+      "heapUsed": 45,
+      "rss": 78
+    },
+    "checks": {
+      "memory": true,
+      "processManager": true,
+      "devServer": true
+    },
+    "timestamp": "2024-01-01T00:00:00.000Z"
+  }
+}
+```
+
+### recover_from_state
+保存された状態からの復旧を試行します。
+
+**パラメータ:**
+- `force` (オプション): 強制的に復旧を実行するかどうか（デフォルト: false）
+
+```json
+{
+  "success": true,
+  "message": "状態の復旧が完了しました",
+  "recovery": {
+    "devProcessRecovered": true,
+    "projectContextRecovered": true,
+    "warnings": [],
+    "previousProcess": {
+      "pid": 12345,
+      "directory": "/path/to/project",
+      "status": "running",
+      "ports": [3000]
+    },
+    "recoveryTimestamp": "2024-01-01T00:00:00.000Z"
+  }
+}
+```
+
 ## インストールと使用
 
 ### 1. npx経由での直接使用（推奨）
@@ -266,6 +319,157 @@ src/
 - macOS (lsofコマンド使用)
 - Linux (netstatコマンド使用)
 - Node.js 18以上
+
+## トラブルシューティング
+
+### MCPサーバーが応答しない場合
+
+MCPサーバーがクラッシュしたり応答しなくなった場合の復旧方法：
+
+#### 1. 開発サーバーのみ復旧する場合
+
+**Claude Code内での復旧:**
+```
+開発サーバーを再起動してください
+```
+→ `restart_dev_server` ツールが自動実行されます
+
+**コマンドラインからの復旧:**
+```bash
+# 開発サーバーの状態確認
+npx npm-dev-mcp status
+
+# 開発サーバー再起動
+npx npm-dev-mcp restart
+
+# ログ確認
+npx npm-dev-mcp logs 50
+```
+
+#### 2. MCPサーバー全体を復旧する場合
+
+**Claude Codeの再起動:**
+1. Claude Codeアプリケーションを完全に終了
+2. アプリケーションを再起動
+3. MCPサーバーが自動的に再接続されます
+
+**手動でのMCPサーバー確認:**
+```bash
+# プロセス確認
+ps aux | grep npm-dev-mcp
+
+# 必要に応じてプロセス終了
+pkill -f npm-dev-mcp
+```
+
+#### 3. 設定の確認
+
+MCPサーバーが起動しない場合、設定ファイルを確認：
+
+**macOS:**
+```bash
+cat ~/.claude/claude_desktop_config.json
+```
+
+**Windows:**
+```cmd
+type %APPDATA%\Claude\claude_desktop_config.json
+```
+
+正しい設定例：
+```json
+{
+  "mcpServers": {
+    "npm-dev-mcp": {
+      "command": "npx",
+      "args": ["npm-dev-mcp", "--mcp"]
+    }
+  }
+}
+```
+
+#### 4. PM2を使用したプロセス管理（上級者向け）
+
+より堅牢な運用を行いたい場合、PM2プロセスマネージャーを使用できます：
+
+**PM2のインストール:**
+```bash
+npm install -g pm2
+```
+
+**PM2でのMCPサーバー管理:**
+```bash
+# MCPサーバーをPM2で開始
+npm run pm2:start
+
+# 状態確認
+npm run pm2:status
+
+# ログ確認
+npm run pm2:logs
+
+# 再起動
+npm run pm2:restart
+
+# 停止
+npm run pm2:stop
+
+# 完全削除
+npm run pm2:delete
+```
+
+**PM2の利点:**
+- 自動再起動（クラッシュ時）
+- メモリ監視と制限
+- ログローテーション
+- クラスター機能（必要に応じて）
+
+#### 5. 外部監視用ヘルスチェックエンドポイント
+
+外部の監視システム（Prometheus、Nagios等）と連携するためのHTTPエンドポイントを提供できます：
+
+**ヘルスエンドポイントの有効化:**
+```bash
+# 環境変数を設定
+export HEALTH_ENDPOINT=true
+export HEALTH_PORT=8080
+export HEALTH_HOST=127.0.0.1
+
+# MCPサーバーを開始
+npm start
+```
+
+**利用可能なエンドポイント:**
+```bash
+# 基本ヘルスチェック
+curl http://127.0.0.1:8080/health
+
+# 詳細ヘルスレポート
+curl http://127.0.0.1:8080/health/detailed
+
+# Prometheusメトリクス
+curl http://127.0.0.1:8080/metrics
+```
+
+**環境変数:**
+- `HEALTH_ENDPOINT`: エンドポイントを有効化（true/false）
+- `HEALTH_PORT`: ポート番号（デフォルト: 8080）
+- `HEALTH_HOST`: ホスト（デフォルト: 127.0.0.1）
+- `HEALTH_PATH`: ヘルスチェックパス（デフォルト: /health）
+
+#### 6. よくある問題と解決方法
+
+**問題: "spawn ENOENT" エラー**
+- 原因: Node.jsまたはnpxが見つからない
+- 解決: PATHの確認とNode.jsの再インストール
+
+**問題: 開発サーバーが起動しない**
+- 原因: ポートが使用中、package.jsonの設定不備
+- 解決: `npx npm-dev-mcp scan` でプロジェクト検出を確認
+
+**問題: ログが表示されない**
+- 原因: プロセスが正常に開始されていない
+- 解決: `npx npm-dev-mcp status` で状態確認
 
 ## ライセンス
 
