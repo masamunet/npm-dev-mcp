@@ -8,6 +8,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { Logger } from './utils/logger.js';
+import { ProjectContextManager } from './context/ProjectContextManager.js';
+import { CommandRegistry } from './cli/CommandRegistry.js';
 
 // Import tool schemas and handlers
 import { scanProjectDirsSchema, scanProjectDirs } from './tools/scanProjectDirs.js';
@@ -158,8 +160,15 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-// Start the server
-async function main() {
+// Determine run mode based on command line arguments
+function determineRunMode(): 'mcp' | 'cli' {
+  // If no arguments or only stdio-related arguments, run as MCP server
+  const args = process.argv.slice(2);
+  return args.length === 0 ? 'mcp' : 'cli';
+}
+
+// Start MCP server mode
+async function startMCPServer() {
   try {
     const transport = new StdioServerTransport();
     await server.connect(transport);
@@ -169,6 +178,43 @@ async function main() {
     
   } catch (error) {
     logger.error('Failed to start server', { error });
+    process.exit(1);
+  }
+}
+
+// Start CLI mode
+async function startCLIMode() {
+  try {
+    const args = process.argv.slice(2);
+    const commandRegistry = new CommandRegistry();
+    await commandRegistry.executeCommand(args);
+    
+  } catch (error) {
+    logger.error('CLI execution failed', { error });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`❌ ${errorMessage}`);
+    process.exit(1);
+  }
+}
+
+// Main entry point
+async function main() {
+  try {
+    // Initialize project context
+    const contextManager = ProjectContextManager.getInstance();
+    await contextManager.initialize(process.cwd());
+    
+    // Determine and execute run mode
+    const runMode = determineRunMode();
+    
+    if (runMode === 'mcp') {
+      await startMCPServer();
+    } else {
+      await startCLIMode();
+    }
+    
+  } catch (error) {
+    logger.error('Initialization failed', { error });
     process.exit(1);
   }
 }

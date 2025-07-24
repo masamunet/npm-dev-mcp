@@ -132,20 +132,41 @@ npm run devプロセスを再起動します。
 
 ## インストールと使用
 
-### 1. ビルド
+### 1. npx経由での直接使用（推奨）
+```bash
+# プロジェクトをスキャン
+npx npm-dev-mcp scan
+
+# dev serverを開始
+npx npm-dev-mcp start
+
+# 状態確認
+npx npm-dev-mcp status
+
+# ログを表示
+npx npm-dev-mcp logs 50
+
+# サーバー停止
+npx npm-dev-mcp stop
+
+# ヘルプ表示
+npx npm-dev-mcp --help
+```
+
+### 2. ローカル開発用ビルド
 ```bash
 npm install
 npm run build
 ```
 
-### 2. MCPサーバーとして起動
+### 3. MCPサーバーとして起動
 ```bash
 npm start
 ```
 
-### 3. Claude Codeでの設定
+### 4. Claude Codeでの設定
 
-#### 3.1 設定ファイルの場所
+#### 4.1 設定ファイルの場所
 Claude Codeの設定ファイルを開きます：
 
 **macOS:**
@@ -158,7 +179,7 @@ Claude Codeの設定ファイルを開きます：
 %APPDATA%\Claude\claude_desktop_config.json
 ```
 
-#### 3.2 MCPサーバーの追加
+#### 4.2 MCPサーバーの追加
 設定ファイルにnpm-dev-mcpサーバーを追加：
 
 ```json
@@ -177,7 +198,7 @@ Claude Codeの設定ファイルを開きます：
 - 例: `"/Users/username/projects/npm-dev-mcp/dist/index.js"`
 - 相対パスや`~`は使用できません
 
-#### 3.3 Claude Codeの再起動
+#### 4.3 Claude Codeの再起動
 設定を追加した後、Claude Codeを再起動すると、npm-dev-mcpサーバーが利用可能になります。
 
 #### 3.4 動作確認

@@ -2,17 +2,29 @@ import { join, dirname } from 'path';
 import { ProjectInfo } from '../types.js';
 import { findFilesRecursively, findUpwards, readJsonFile, fileExists } from '../utils/fileSystem.js';
 import { Logger } from '../utils/logger.js';
+import { ProjectContextManager } from '../context/ProjectContextManager.js';
 
 export class ProjectScanner {
   private logger = Logger.getInstance();
 
-  async scanForProjects(startDir: string = process.cwd()): Promise<ProjectInfo[]> {
-    this.logger.info(`Scanning for projects starting from ${startDir}`);
+  async scanForProjects(startDir?: string): Promise<ProjectInfo[]> {
+    // Use project context if available and no startDir specified
+    let searchDir = startDir;
+    if (!searchDir) {
+      const contextManager = ProjectContextManager.getInstance();
+      if (contextManager.isInitialized()) {
+        searchDir = contextManager.getContext().rootDirectory;
+      } else {
+        searchDir = process.cwd();
+      }
+    }
+    
+    this.logger.info(`Scanning for projects starting from ${searchDir}`);
     
     const projects: ProjectInfo[] = [];
     
     // First, look for package.json in current and parent directories
-    const upwardsPackageJson = await findUpwards(startDir, 'package.json');
+    const upwardsPackageJson = await findUpwards(searchDir, 'package.json');
     if (upwardsPackageJson) {
       const projectInfo = await this.createProjectInfo(upwardsPackageJson);
       if (projectInfo) {
@@ -21,7 +33,7 @@ export class ProjectScanner {
     }
     
     // Then search recursively in subdirectories
-    const packageJsonFiles = await findFilesRecursively(startDir, 'package.json', 3);
+    const packageJsonFiles = await findFilesRecursively(searchDir, 'package.json', 3);
     
     for (const packageJsonPath of packageJsonFiles) {
       // Skip if we already found this one

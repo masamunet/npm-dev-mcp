@@ -4,6 +4,7 @@ import { isProcessRunning, killProcess, parsePort } from '../utils/processUtils.
 import { Logger } from '../utils/logger.js';
 import { LogManager } from './LogManager.js';
 import { PortDetector } from './PortDetector.js';
+import { ProjectContextManager } from '../context/ProjectContextManager.js';
 
 export class ProcessManager {
   private logger = Logger.getInstance();
@@ -18,10 +19,21 @@ export class ProcessManager {
   }
 
   async startDevServer(
-    directory: string, 
+    directory?: string, 
     env?: Record<string, string>
   ): Promise<DevProcess> {
-    this.logger.info(`Starting dev server in ${directory}`);
+    // Use project context if no directory specified
+    let targetDirectory = directory;
+    if (!targetDirectory) {
+      const contextManager = ProjectContextManager.getInstance();
+      if (contextManager.isInitialized()) {
+        targetDirectory = contextManager.getContext().rootDirectory;
+      } else {
+        targetDirectory = process.cwd();
+      }
+    }
+    
+    this.logger.info(`Starting dev server in ${targetDirectory}`);
 
     // Check if a process is already running
     if (this.currentProcess && await this.isCurrentProcessRunning()) {
@@ -35,7 +47,7 @@ export class ProcessManager {
 
       // Spawn the npm run dev process
       this.childProcess = spawn('npm', ['run', 'dev'], {
-        cwd: directory,
+        cwd: targetDirectory,
         env: env || process.env,
         detached: false, // Keep attached for better control
         stdio: ['ignore', 'pipe', 'pipe']
@@ -46,7 +58,7 @@ export class ProcessManager {
       // Create process info
       this.currentProcess = {
         pid,
-        directory,
+        directory: targetDirectory,
         status: 'starting',
         startTime: new Date(),
         ports: []
@@ -122,7 +134,15 @@ export class ProcessManager {
   async restartDevServer(): Promise<DevProcess> {
     this.logger.info('Restarting dev server');
     
-    const directory = this.currentProcess?.directory || process.cwd();
+    let directory = this.currentProcess?.directory;
+    if (!directory) {
+      const contextManager = ProjectContextManager.getInstance();
+      if (contextManager.isInitialized()) {
+        directory = contextManager.getContext().rootDirectory;
+      } else {
+        directory = process.cwd();
+      }
+    }
     
     await this.stopDevServer();
     
