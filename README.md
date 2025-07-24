@@ -1,4 +1,4 @@
-# npm-dev-mcp
+# @masamunet/npm-dev-mcp
 
 npm run devプロセスを管理するMCPサーバーです。プロジェクトの自動検出、バックグラウンド実行、ログ監視、ポート管理機能を提供します。
 
@@ -185,50 +185,70 @@ MCPサーバー自身のヘルス状態を取得します。
 
 ## インストールと使用
 
+### 0. 公開情報
+
+パッケージはnpmレジストリに公開されています：
+- **パッケージ名**: `@masamunet/npm-dev-mcp`
+- **バージョン**: 1.1.0
+- **レジストリ**: https://www.npmjs.com/package/@masamunet/npm-dev-mcp
+
 ### 1. npx経由での直接使用（推奨）
 ```bash
 # プロジェクトをスキャン
-npx npm-dev-mcp scan
+npx @masamunet/npm-dev-mcp scan
 
 # dev serverを開始
-npx npm-dev-mcp start
+npx @masamunet/npm-dev-mcp start
 
 # 状態確認
-npx npm-dev-mcp status
+npx @masamunet/npm-dev-mcp status
 
 # ログを表示
-npx npm-dev-mcp logs 50
+npx @masamunet/npm-dev-mcp logs 50
 
 # サーバー停止
-npx npm-dev-mcp stop
+npx @masamunet/npm-dev-mcp stop
 
 # ヘルプ表示
-npx npm-dev-mcp --help
+npx @masamunet/npm-dev-mcp --help
 ```
 
-### 2. ローカル開発用ビルド
+### 2. グローバルインストール
 ```bash
+# グローバルインストール
+npm install -g @masamunet/npm-dev-mcp
+
+# 使用例
+npm-dev-mcp scan
+npm-dev-mcp start
+npm-dev-mcp status
+```
+
+### 3. ローカル開発用ビルド
+```bash
+git clone https://github.com/masamunet/npm-dev-mcp.git
+cd npm-dev-mcp
 npm install
 npm run build
 ```
 
-### 3. MCPサーバーとして起動
+### 4. MCPサーバーとして起動
 ```bash
 npm start
 ```
 
-### 4. Claude Codeでの設定
+### 5. Claude Codeでの設定
 
-#### 4.1 コマンドラインから追加（推奨）
+#### 5.1 コマンドラインから追加（推奨）
 Claude Codeのmcpコマンドを使用して簡単に追加できます：
 
 ```bash
-claude mcp add npm-dev-mcp -- npx npm-dev-mcp --mcp
+claude mcp add @masamunet/npm-dev-mcp -- npx @masamunet/npm-dev-mcp --mcp
 ```
 
-このコマンド実行後、Claude Codeを再起動するとnpm-dev-mcpが利用可能になります。
+このコマンド実行後、Claude Codeを再起動すると@masamunet/npm-dev-mcpが利用可能になります。
 
-#### 4.2 手動での設定ファイル編集
+#### 5.2 手動での設定ファイル編集
 手動で設定する場合は、設定ファイルを直接編集します：
 
 **設定ファイルの場所:**
@@ -249,9 +269,9 @@ claude mcp add npm-dev-mcp -- npx npm-dev-mcp --mcp
 ```json
 {
   "mcpServers": {
-    "npm-dev-mcp": {
+    "@masamunet/npm-dev-mcp": {
       "command": "node",
-      "args": ["/absolute/path/to/npm-dev-mcp/dist/index.js"]
+      "args": ["/absolute/path/to/@masamunet/npm-dev-mcp/dist/index.js"]
     }
   }
 }
@@ -261,9 +281,9 @@ claude mcp add npm-dev-mcp -- npx npm-dev-mcp --mcp
 ```json
 {
   "mcpServers": {
-    "npm-dev-mcp": {
+    "@masamunet/npm-dev-mcp": {
       "command": "npx",
-      "args": ["npm-dev-mcp", "--mcp"]
+      "args": ["@masamunet/npm-dev-mcp", "--mcp"]
     }
   }
 }
@@ -271,14 +291,14 @@ claude mcp add npm-dev-mcp -- npx npm-dev-mcp --mcp
 
 **注意事項:**
 - 方法1の`args`の配列内のパスは**絶対パス**で指定してください
-- 例: `"/Users/username/projects/npm-dev-mcp/dist/index.js"`
+- 例: `"/Users/username/projects/@masamunet/npm-dev-mcp/dist/index.js"`
 - 相対パスや`~`は使用できません
 - 方法2では`--mcp`フラグが必要です（MCPサーバーモードを強制）
 
-#### 4.3 Claude Codeの再起動
-設定を追加した後、Claude Codeを再起動すると、npm-dev-mcpサーバーが利用可能になります。
+#### 5.3 Claude Codeの再起動
+設定を追加した後、Claude Codeを再起動すると、@masamunet/npm-dev-mcpサーバーが利用可能になります。
 
-#### 3.4 動作確認
+#### 5.4 動作確認
 Claude Code内で以下のように使用できます：
 
 ```
@@ -337,13 +357,13 @@ MCPサーバーがクラッシュしたり応答しなくなった場合の復�
 **コマンドラインからの復旧:**
 ```bash
 # 開発サーバーの状態確認
-npx npm-dev-mcp status
+npx @masamunet/npm-dev-mcp status
 
 # 開発サーバー再起動
-npx npm-dev-mcp restart
+npx @masamunet/npm-dev-mcp restart
 
 # ログ確認
-npx npm-dev-mcp logs 50
+npx @masamunet/npm-dev-mcp logs 50
 ```
 
 #### 2. MCPサーバー全体を復旧する場合
@@ -356,10 +376,10 @@ npx npm-dev-mcp logs 50
 **手動でのMCPサーバー確認:**
 ```bash
 # プロセス確認
-ps aux | grep npm-dev-mcp
+ps aux | grep @masamunet/npm-dev-mcp
 
 # 必要に応じてプロセス終了
-pkill -f npm-dev-mcp
+pkill -f @masamunet/npm-dev-mcp
 ```
 
 #### 3. 設定の確認
@@ -380,9 +400,9 @@ type %APPDATA%\Claude\claude_desktop_config.json
 ```json
 {
   "mcpServers": {
-    "npm-dev-mcp": {
+    "@masamunet/npm-dev-mcp": {
       "command": "npx",
-      "args": ["npm-dev-mcp", "--mcp"]
+      "args": ["@masamunet/npm-dev-mcp", "--mcp"]
     }
   }
 }
@@ -465,11 +485,11 @@ curl http://127.0.0.1:8080/metrics
 
 **問題: 開発サーバーが起動しない**
 - 原因: ポートが使用中、package.jsonの設定不備
-- 解決: `npx npm-dev-mcp scan` でプロジェクト検出を確認
+- 解決: `npx @masamunet/npm-dev-mcp scan` でプロジェクト検出を確認
 
 **問題: ログが表示されない**
 - 原因: プロセスが正常に開始されていない
-- 解決: `npx npm-dev-mcp status` で状態確認
+- 解決: `npx @masamunet/npm-dev-mcp status` で状態確認
 
 ## ライセンス
 

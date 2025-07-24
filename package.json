@@ -1,5 +1,5 @@
 {
-  "name": "npm-dev-mcp",
+  "name": "@masamunet/npm-dev-mcp",
   "version": "1.1.0",
   "description": "MCP server for managing npm run dev processes",
   "main": "dist/index.js",
@@ -26,16 +26,16 @@
     "pm2:status": "pm2 status npm-dev-mcp"
   },
   "keywords": ["mcp", "npm", "dev-server", "process-management", "cli", "npx"],
-  "author": "",
+  "author": "masamunet",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/username/npm-dev-mcp.git"
+    "url": "https://github.com/masamunet/npm-dev-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/username/npm-dev-mcp/issues"
+    "url": "https://github.com/masamunet/npm-dev-mcp/issues"
   },
-  "homepage": "https://github.com/username/npm-dev-mcp#readme",
+  "homepage": "https://github.com/masamunet/npm-dev-mcp#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"
   },
