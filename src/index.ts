@@ -8,6 +8,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { Logger } from './utils/logger.js';
+import { SafeErrorHandler } from './utils/safeErrorHandler.js';
 import { ProjectContextManager } from './context/ProjectContextManager.js';
 import { CommandRegistry } from './cli/CommandRegistry.js';
 import { HealthChecker } from './components/HealthChecker.js';
@@ -23,10 +24,15 @@ import { stopDevServerSchema, stopDevServer } from './tools/stopDevServer.js';
 import { restartDevServerSchema, restartDevServer } from './tools/restartDevServer.js';
 import { getHealthStatusSchema, getHealthStatus } from './tools/getHealthStatus.js';
 import { recoverFromStateSchema, recoverFromState } from './tools/recoverFromState.js';
+import { autoRecoverSchema, autoRecover } from './tools/autoRecover.js';
 
-// Initialize logger
+// Initialize logger and safe error handler
 const logger = Logger.getInstance();
+const safeErrorHandler = SafeErrorHandler.getInstance();
 logger.setLogLevel('info');
+
+// Setup safe error handlers (non-fatal error handling)
+safeErrorHandler.setupSafeErrorHandlers();
 
 // Create server instance
 const server = new Server(
@@ -51,6 +57,7 @@ const tools = [
   restartDevServerSchema,
   getHealthStatusSchema,
   recoverFromStateSchema,
+  autoRecoverSchema,
 ];
 
 // Handle list tools request
@@ -145,6 +152,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: await recoverFromState(args as { force?: boolean }),
+            },
+          ],
+        };
+        
+      case 'auto_recover':
+        return {
+          content: [
+            {
+              type: 'text',
+              text: await autoRecover(args as { maxRetries?: number; forceRecover?: boolean; restartMcp?: boolean }),
             },
           ],
         };
@@ -310,18 +327,10 @@ async function main() {
   }
 }
 
-// Handle uncaught exceptions
-process.on('uncaughtException', (error) => {
-  logger.error('Uncaught exception', { error });
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled rejection', { reason, promise });
-  process.exit(1);
-});
+// Error handlers are now managed by SafeErrorHandler
+// (setupSafeErrorHandlers() called above replaces the fatal handlers)
 
 main().catch((error) => {
   logger.error('Main function failed', { error });
-  process.exit(1);
+  safeErrorHandler.handleFatalError(error instanceof Error ? error : new Error(String(error)), 'main');
 });

@@ -3,6 +3,7 @@ import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { Logger } from '../utils/logger.js';
+import { SafeErrorHandler } from '../utils/safeErrorHandler.js';
 import { DevProcess } from '../types.js';
 
 export interface ServerState {
@@ -36,12 +37,14 @@ export interface ServerState {
 export class StateManager {
   private static instance: StateManager | null = null;
   private logger: Logger;
+  private safeErrorHandler: SafeErrorHandler;
   private stateFilePath: string;
   private lockFilePath: string;
   private autoSaveInterval: NodeJS.Timeout | null = null;
 
   private constructor() {
     this.logger = Logger.getInstance();
+    this.safeErrorHandler = SafeErrorHandler.getInstance();
     
     // 状態ファイルのパスを設定
     const stateDir = join(homedir(), '.npm-dev-mcp');
@@ -246,6 +249,64 @@ export class StateManager {
   }
 
   /**
+   * 状態の整合性を確保
+   */
+  async ensureStateConsistency(): Promise<void> {
+    try {
+      const state = await this.loadState();
+      if (!state) {
+        this.logger.debug('No state to check consistency');
+        return;
+      }
+
+      let needsUpdate = false;
+      const updatedState = { ...state };
+
+      // 開発プロセスの状態チェック
+      if (state.devProcess) {
+        const { isProcessRunning } = await import('../utils/processUtils.js');
+        const processExists = await isProcessRunning(state.devProcess.pid);
+        
+        if (!processExists && state.devProcess.status === 'running') {
+          this.logger.warn('Detected stale process state, updating to stopped', {
+            pid: state.devProcess.pid
+          });
+          updatedState.devProcess = {
+            ...state.devProcess,
+            status: 'stopped'
+          };
+          needsUpdate = true;
+        }
+      }
+
+      // ヘルス状態の妥当性チェック
+      if (state.healthStatus) {
+        const timeSinceLastHealthy = Date.now() - new Date(state.healthStatus.lastHealthy).getTime();
+        const maxStaleTime = 10 * 60 * 1000; // 10分
+
+        if (timeSinceLastHealthy > maxStaleTime) {
+          this.logger.info('Health status is stale, resetting consecutive failures');
+          updatedState.healthStatus = {
+            ...state.healthStatus,
+            consecutiveFailures: Math.min(state.healthStatus.consecutiveFailures, 3)
+          };
+          needsUpdate = true;
+        }
+      }
+
+      if (needsUpdate) {
+        await this.saveState(updatedState);
+        this.logger.info('State consistency ensured with updates');
+      } else {
+        this.logger.debug('State consistency verified - no updates needed');
+      }
+
+    } catch (error) {
+      this.logger.error('Failed to ensure state consistency', { error });
+    }
+  }
+
+  /**
    * 状態ファイルをクリア
    */
   async clearState(): Promise<void> {
@@ -306,7 +367,7 @@ export class StateManager {
       
       // JSONパース
       try {
-        const parsed = JSON.parse(data);
+        const parsed = this.safeErrorHandler.safeJsonParse(data, {} as ServerState);
         
         // 基本的な構造検証
         if (!parsed || typeof parsed !== 'object') {
