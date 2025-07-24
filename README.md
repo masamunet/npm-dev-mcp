@@ -166,8 +166,19 @@ npm start
 
 ### 4. Claude Codeでの設定
 
-#### 4.1 設定ファイルの場所
-Claude Codeの設定ファイルを開きます：
+#### 4.1 コマンドラインから追加（推奨）
+Claude Codeのmcpコマンドを使用して簡単に追加できます：
+
+```bash
+claude mcp add npm-dev-mcp -- npx npm-dev-mcp --mcp
+```
+
+このコマンド実行後、Claude Codeを再起動するとnpm-dev-mcpが利用可能になります。
+
+#### 4.2 手動での設定ファイル編集
+手動で設定する場合は、設定ファイルを直接編集します：
+
+**設定ファイルの場所:**
 
 **macOS:**
 ```bash
@@ -179,10 +190,9 @@ Claude Codeの設定ファイルを開きます：
 %APPDATA%\Claude\claude_desktop_config.json
 ```
 
-#### 4.2 MCPサーバーの追加
-設定ファイルにnpm-dev-mcpサーバーを追加：
+**設定内容:**
 
-**方法1: 直接パス指定（推奨）**
+**方法1: 直接パス指定**
 ```json
 {
   "mcpServers": {
