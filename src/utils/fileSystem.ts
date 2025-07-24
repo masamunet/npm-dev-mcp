@@ -22,9 +22,22 @@ export async function isDirectory(path: string): Promise<boolean> {
 export async function readJsonFile(filePath: string): Promise<any> {
   try {
     const content = await fs.readFile(filePath, 'utf-8');
-    return JSON.parse(content);
+    
+    // 空ファイルチェック
+    if (!content.trim()) {
+      throw new Error(`JSON file is empty: ${filePath}`);
+    }
+    
+    try {
+      return JSON.parse(content);
+    } catch (parseError) {
+      throw new Error(`Invalid JSON in file ${filePath}: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+    }
   } catch (error) {
-    throw new Error(`Failed to read JSON file ${filePath}: ${error}`);
+    if (error instanceof Error && error.message.includes('JSON')) {
+      throw error; // JSON関連エラーはそのまま再throw
+    }
+    throw new Error(`Failed to read file ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

@@ -295,8 +295,46 @@ export class StateManager {
    * ファイルから状態を読み込み
    */
   private async loadStateFromFile(): Promise<ServerState> {
-    const data = await readFile(this.stateFilePath, 'utf8');
-    return JSON.parse(data);
+    try {
+      const data = await readFile(this.stateFilePath, 'utf8');
+      
+      // 空ファイルチェック
+      if (!data.trim()) {
+        this.logger.warn('State file is empty, creating default state');
+        throw new Error('Empty state file');
+      }
+      
+      // JSONパース
+      try {
+        const parsed = JSON.parse(data);
+        
+        // 基本的な構造検証
+        if (!parsed || typeof parsed !== 'object') {
+          throw new Error('Invalid state structure');
+        }
+        
+        return parsed;
+      } catch (parseError) {
+        this.logger.error('JSON parse error in state file, backing up and creating new state', { 
+          parseError: parseError instanceof Error ? parseError.message : String(parseError),
+          data: data.substring(0, 200) // 最初の200文字のみログ
+        });
+        
+        // 壊れたファイルをバックアップ
+        const backupPath = this.stateFilePath + '.backup.' + Date.now();
+        try {
+          await writeFile(backupPath, data, 'utf8');
+          this.logger.info('Backed up corrupted state file', { backupPath });
+        } catch (backupError) {
+          this.logger.warn('Failed to backup corrupted state file', { backupError });
+        }
+        
+        throw new Error('JSON parse failed');
+      }
+    } catch (error) {
+      // ファイル読み込みエラーまたはJSON解析エラー
+      throw error;
+    }
   }
 
   /**
