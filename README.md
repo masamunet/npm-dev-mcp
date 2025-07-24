@@ -144,17 +144,54 @@ npm start
 ```
 
 ### 3. Claude Codeでの設定
-設定ファイルにMCPサーバーを追加：
+
+#### 3.1 設定ファイルの場所
+Claude Codeの設定ファイルを開きます：
+
+**macOS:**
+```bash
+~/.claude/claude_desktop_config.json
+```
+
+**Windows:**
+```bash
+%APPDATA%\Claude\claude_desktop_config.json
+```
+
+#### 3.2 MCPサーバーの追加
+設定ファイルにnpm-dev-mcpサーバーを追加：
 
 ```json
 {
   "mcpServers": {
     "npm-dev-mcp": {
       "command": "node",
-      "args": ["/path/to/npm-dev-mcp/dist/index.js"]
+      "args": ["/absolute/path/to/npm-dev-mcp/dist/index.js"]
     }
   }
 }
+```
+
+**注意事項:**
+- `args`の配列内のパスは**絶対パス**で指定してください
+- 例: `"/Users/username/projects/npm-dev-mcp/dist/index.js"`
+- 相対パスや`~`は使用できません
+
+#### 3.3 Claude Codeの再起動
+設定を追加した後、Claude Codeを再起動すると、npm-dev-mcpサーバーが利用可能になります。
+
+#### 3.4 動作確認
+Claude Code内で以下のように使用できます：
+
+```
+プロジェクトを検索してください
+→ scan_project_dirs ツールが実行される
+
+npm run devを開始してください  
+→ start_dev_server ツールが実行される
+
+開発サーバーの状態を確認してください
+→ get_dev_status ツールが実行される
 ```
 
 ## 開発
