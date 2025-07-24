@@ -243,7 +243,7 @@ npm start
 Claude Codeのmcpコマンドを使用して簡単に追加できます：
 
 ```bash
-claude mcp add @masamunet/npm-dev-mcp -- npx @masamunet/npm-dev-mcp --mcp
+claude mcp add npm-dev-mcp -- npx @masamunet/npm-dev-mcp --mcp
 ```
 
 このコマンド実行後、Claude Codeを再起動すると@masamunet/npm-dev-mcpが利用可能になります。
