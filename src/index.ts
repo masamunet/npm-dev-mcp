@@ -14,6 +14,7 @@ import { CommandRegistry } from './cli/CommandRegistry.js';
 import { HealthChecker } from './components/HealthChecker.js';
 import { StateManager } from './components/StateManager.js';
 import { HealthEndpoint } from './components/HealthEndpoint.js';
+import { MCPServerInitializer, SERVICE_DEPENDENCIES } from './initialization/MCPServerInitializer.js';
 
 // Import tool schemas and handlers
 import { scanProjectDirsSchema, scanProjectDirs } from './tools/scanProjectDirs.js';
@@ -33,6 +34,9 @@ logger.setLogLevel('info');
 
 // Setup safe error handlers (non-fatal error handling)
 safeErrorHandler.setupSafeErrorHandlers();
+
+// Global initializer instance for MCP server
+let mcpInitializer: MCPServerInitializer | null = null;
 
 // Create server instance
 const server = new Server(
@@ -68,6 +72,44 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
+// Helper function for dependency checking
+async function handleDependencyCheck(toolName: string): Promise<any | null> {
+  if (!mcpInitializer) {
+    logger.warn(`MCP initializer not available for tool: ${toolName}`);
+    return null;
+  }
+  
+  if (!(toolName in SERVICE_DEPENDENCIES)) {
+    return null;
+  }
+
+  try {
+    await mcpInitializer.ensureToolDependencies(toolName as keyof typeof SERVICE_DEPENDENCIES);
+    return null;
+  } catch (dependencyError) {
+    const errorMessage = dependencyError instanceof Error ? dependencyError.message : String(dependencyError);
+    logger.warn(`Tool ${toolName} dependency not ready`, { 
+      error: errorMessage,
+      tool: toolName 
+    });
+    
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            success: false,
+            message: `サービス初期化中のため一時的に利用できません: ${errorMessage}`,
+            tool: toolName,
+            retry: true,
+            retryAfter: 5000
+          }),
+        },
+      ],
+    };
+  }
+}
+
 // Handle tool calls
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
@@ -75,6 +117,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   logger.info(`Executing tool: ${name}`, { args });
   
   try {
+    // 依存関係チェック
+    const dependencyError = await handleDependencyCheck(name);
+    if (dependencyError) {
+      return dependencyError;
+    }
+    
     switch (name) {
       case 'scan_project_dirs':
         return {
@@ -246,46 +294,29 @@ function determineRunMode(): 'mcp' | 'cli' {
 // Start MCP server mode
 async function startMCPServer() {
   try {
+    // フェーズ1: 最小限初期化（STDIO接続のみ）
     const transport = new StdioServerTransport();
     await server.connect(transport);
     
-    // 状態管理を初期化
-    const stateManager = StateManager.getInstance();
-    await stateManager.initialize();
+    logger.info('MCP JSON-RPC connection established');
+    logger.info('Available tools: ' + tools.map(t => t.name).join(', '));
     
-    // ヘルスチェックを開始
-    const healthChecker = HealthChecker.getInstance();
-    healthChecker.startPeriodicHealthCheck(30000); // 30秒間隔
+    // 初期化インスタンスを作成
+    mcpInitializer = new MCPServerInitializer();
     
-    // ヘルスエンドポイントを開始（環境変数で有効化）
-    const healthEndpoint = HealthEndpoint.getInstance({
-      port: parseInt(process.env.HEALTH_PORT || '8080'),
-      host: process.env.HEALTH_HOST || '127.0.0.1',
-      enabled: process.env.HEALTH_ENDPOINT === 'true',
-      path: process.env.HEALTH_PATH || '/health'
+    // フェーズ2: 背景初期化（非同期実行）
+    setImmediate(() => {
+      mcpInitializer!.startBackgroundInitialization()
+        .then(() => {
+          logger.info('All background services initialized successfully');
+        })
+        .catch(error => {
+          logger.error('Background service initialization failed', { error });
+        });
     });
     
-    if (process.env.HEALTH_ENDPOINT === 'true') {
-      try {
-        await healthEndpoint.start();
-      } catch (error) {
-        logger.warn('Failed to start health endpoint', { error });
-      }
-    }
-    
-    logger.info('npm-dev-mcp server started successfully');
-    logger.info('Available tools: ' + tools.map(t => t.name).join(', '));
-    logger.info('Health monitoring started (30s interval)');
-    logger.info('State management initialized');
-    
-    if (process.env.HEALTH_ENDPOINT === 'true') {
-      logger.info('Health endpoint available', {
-        url: `http://${process.env.HEALTH_HOST || '127.0.0.1'}:${process.env.HEALTH_PORT || '8080'}${process.env.HEALTH_PATH || '/health'}`
-      });
-    }
-    
   } catch (error) {
-    logger.error('Failed to start server', { error });
+    logger.error('Failed to establish MCP connection', { error });
     process.exit(1);
   }
 }
