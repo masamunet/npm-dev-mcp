@@ -72,6 +72,39 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
+// Helper function for dependency checking
+async function handleDependencyCheck(toolName: string): Promise<any | null> {
+  if (!mcpInitializer || !(toolName in SERVICE_DEPENDENCIES)) {
+    return null;
+  }
+
+  try {
+    await mcpInitializer.ensureToolDependencies(toolName as keyof typeof SERVICE_DEPENDENCIES);
+    return null;
+  } catch (dependencyError) {
+    const errorMessage = dependencyError instanceof Error ? dependencyError.message : String(dependencyError);
+    logger.warn(`Tool ${toolName} dependency not ready`, { 
+      error: errorMessage,
+      tool: toolName 
+    });
+    
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            success: false,
+            message: `サービス初期化中のため一時的に利用できません: ${errorMessage}`,
+            tool: toolName,
+            retry: true,
+            retryAfter: 5000
+          }),
+        },
+      ],
+    };
+  }
+}
+
 // Handle tool calls
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
@@ -80,27 +113,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   
   try {
     // 依存関係チェック
-    if (mcpInitializer && name in SERVICE_DEPENDENCIES) {
-      try {
-        await mcpInitializer.ensureToolDependencies(name as keyof typeof SERVICE_DEPENDENCIES);
-      } catch (dependencyError) {
-        logger.warn(`Tool ${name} dependency not ready`, { error: dependencyError });
-        
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                success: false,
-                message: `サービス初期化中のため一時的に利用できません: ${dependencyError instanceof Error ? dependencyError.message : String(dependencyError)}`,
-                tool: name,
-                retry: true,
-                retryAfter: 5000
-              }),
-            },
-          ],
-        };
-      }
+    const dependencyError = await handleDependencyCheck(name);
+    if (dependencyError) {
+      return dependencyError;
     }
     
     switch (name) {
