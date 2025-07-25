@@ -74,7 +74,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 // Helper function for dependency checking
 async function handleDependencyCheck(toolName: string): Promise<any | null> {
-  if (!mcpInitializer || !(toolName in SERVICE_DEPENDENCIES)) {
+  if (!mcpInitializer) {
+    logger.warn(`MCP initializer not available for tool: ${toolName}`);
+    return null;
+  }
+  
+  if (!(toolName in SERVICE_DEPENDENCIES)) {
     return null;
   }
 

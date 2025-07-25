@@ -127,20 +127,29 @@ export class MCPServerInitializer {
     }
 
     return new Promise((resolve, reject) => {
+      const abortController = new AbortController();
+      let pollingTimeout: NodeJS.Timeout | null = null;
+      
       const timeout = setTimeout(() => {
+        abortController.abort();
+        if (pollingTimeout) clearTimeout(pollingTimeout);
         reject(new Error(`Service initialization timeout: ${name}`));
       }, timeoutMs);
 
       const checkStatus = () => {
+        if (abortController.signal.aborted) return;
+        
         const currentStatus = this.serviceStatus.get(name);
         if (currentStatus === 'ready') {
           clearTimeout(timeout);
+          if (pollingTimeout) clearTimeout(pollingTimeout);
           resolve();
         } else if (currentStatus === 'failed') {
           clearTimeout(timeout);
+          if (pollingTimeout) clearTimeout(pollingTimeout);
           reject(new Error(`Service failed: ${name}`));
         } else {
-          setTimeout(checkStatus, this.config.pollingInterval);
+          pollingTimeout = setTimeout(checkStatus, this.config.pollingInterval);
         }
       };
 
@@ -276,4 +285,28 @@ export class MCPServerInitializer {
     });
     return status;
   }
+
+  /**
+   * 将来拡張: サービスヘルスモニタリング機能
+   * 
+   * 初期化状態だけでなく、実行時のサービス健全性を継続的に監視する機能の設計
+   * 
+   * @param name - チェックするサービス名
+   * @returns サービスが健全な状態かどうか
+   * 
+   * 実装予定機能:
+   * - 定期的なヘルスチェック (ping/pong)
+   * - メモリ使用量監視
+   * - レスポンス時間測定
+   * - エラー率の監視
+   * - 自動復旧メカニズム
+   */
+  // async isServiceHealthy(name: ServiceName): Promise<boolean> {
+  //   // 将来の実装:
+  //   // 1. サービスの基本ヘルスチェック
+  //   // 2. パフォーマンス指標の確認
+  //   // 3. エラー率の監視
+  //   // 4. 必要に応じた自動復旧トリガー
+  //   // return Promise<boolean>
+  // }
 }

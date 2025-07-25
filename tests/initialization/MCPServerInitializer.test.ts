@@ -255,4 +255,45 @@ describe('MCPServerInitializer', () => {
       expect(SERVICE_DEPENDENCIES.auto_recover).toEqual(['stateManager', 'healthChecker']);
     });
   });
+
+  describe('Performance Tests', () => {
+    it('should respond to JSON-RPC initialization within 2 seconds', async () => {
+      const initializer = new MCPServerInitializer();
+      
+      const startTime = Date.now();
+      
+      // JSON-RPC 初期化のシミュレーション - 即座に応答すべき
+      await initializer.initializeService('stateManager', jest.fn().mockResolvedValue(undefined));
+      
+      const initializationTime = Date.now() - startTime;
+      
+      // 2秒以内での初期化完了を検証
+      expect(initializationTime).toBeLessThan(2000);
+    }, 3000); // 3秒のタイムアウト設定
+
+    it('should handle concurrent tool dependency checks efficiently', async () => {
+      const initializer = new MCPServerInitializer();
+      await initializer.initializeService('stateManager', jest.fn().mockResolvedValue(undefined));
+      
+      const startTime = Date.now();
+      
+      // 複数のツールの依存関係チェックを並行実行
+      const toolChecks = [
+        'start_dev_server',
+        'get_dev_status', 
+        'get_dev_logs',
+        'stop_dev_server'
+      ].map(tool => 
+        initializer.ensureToolDependencies(tool as keyof typeof SERVICE_DEPENDENCIES)
+          .catch(() => {}) // エラーは無視（依存関係が満たされていない場合）
+      );
+      
+      await Promise.all(toolChecks);
+      
+      const checkTime = Date.now() - startTime;
+      
+      // 並行依存関係チェックが1秒以内で完了することを検証
+      expect(checkTime).toBeLessThan(1000);
+    }, 2000);
+  });
 });

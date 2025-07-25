@@ -1,3 +1,9 @@
+/**
+ * サービス初期化の定数定義
+ */
+const DEFAULT_POLLING_INTERVAL = 100;  // ms
+const DEFAULT_DEPENDENCY_TIMEOUT = 5000;  // ms
+
 export interface HealthEndpointConfig {
   port: number;
   host: string;
@@ -59,8 +65,8 @@ export class ConfigValidator {
 
   public static validateServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
     const healthCheckInterval = parseInt(env.HEALTH_CHECK_INTERVAL || '30000', 10);
-    const dependencyTimeout = parseInt(env.DEPENDENCY_TIMEOUT || '5000', 10);
-    const pollingInterval = parseInt(env.POLLING_INTERVAL || '100', 10);
+    const dependencyTimeout = parseInt(env.DEPENDENCY_TIMEOUT || DEFAULT_DEPENDENCY_TIMEOUT.toString(), 10);
+    const pollingInterval = parseInt(env.POLLING_INTERVAL || DEFAULT_POLLING_INTERVAL.toString(), 10);
 
     if (isNaN(healthCheckInterval)) {
       throw new Error(`Invalid HEALTH_CHECK_INTERVAL: ${env.HEALTH_CHECK_INTERVAL}`);
