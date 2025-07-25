@@ -99,14 +99,15 @@ export class ProjectContextManager {
   // デバッグ用：コンテキスト情報を出力
   debugInfo(): void {
     if (!this.context) {
-      console.log('ProjectContext: Not initialized');
+      this.logger.debug('ProjectContext: Not initialized');
       return;
     }
 
-    console.log('ProjectContext:');
-    console.log(`  Name: ${this.context.projectName}`);
-    console.log(`  Root: ${this.context.rootDirectory}`);
-    console.log(`  Package.json: ${this.context.packageJson ? 'Found' : 'Not found'}`);
-    console.log(`  Env file: ${this.context.envPath || 'Not found'}`);
+    this.logger.debug('ProjectContext:', {
+      name: this.context.projectName,
+      root: this.context.rootDirectory,
+      hasPackageJson: !!this.context.packageJson,
+      envPath: this.context.envPath || 'Not found'
+    });
   }
 }

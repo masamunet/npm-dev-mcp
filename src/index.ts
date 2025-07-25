@@ -331,7 +331,10 @@ async function startCLIMode() {
   } catch (error) {
     logger.error('CLI execution failed', { error });
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`❌ ${errorMessage}`);
+    // Only output to console in CLI mode, not MCP mode
+    if (determineRunMode() === 'cli') {
+      console.error(`❌ ${errorMessage}`);
+    }
     process.exit(1);
   }
 }
