@@ -342,13 +342,19 @@ async function startCLIMode() {
 // Main entry point
 async function main() {
   try {
+    // Determine run mode first
+    const runMode = determineRunMode();
+    
+    // MCPモードの場合は早期にログを無効化
+    if (runMode === 'mcp') {
+      logger.setMcpMode(true);
+    }
+    
     // Initialize project context
     const contextManager = ProjectContextManager.getInstance();
     await contextManager.initialize(process.cwd());
     
-    // Determine and execute run mode
-    const runMode = determineRunMode();
-    
+    // Execute run mode
     if (runMode === 'mcp') {
       await startMCPServer();
     } else {
