@@ -1,6 +1,7 @@
 export class Logger {
   private static instance: Logger;
   private logLevel: 'debug' | 'info' | 'warn' | 'error' = 'info';
+  private mcpMode: boolean = false;
 
   static getInstance(): Logger {
     if (!Logger.instance) {
@@ -11,6 +12,10 @@ export class Logger {
 
   setLogLevel(level: 'debug' | 'info' | 'warn' | 'error'): void {
     this.logLevel = level;
+  }
+
+  setMcpMode(enabled: boolean): void {
+    this.mcpMode = enabled;
   }
 
   private shouldLog(level: string): boolean {
@@ -27,25 +32,25 @@ export class Logger {
   }
 
   debug(message: string, meta?: any): void {
-    if (this.shouldLog('debug')) {
+    if (this.shouldLog('debug') && !this.mcpMode) {
       console.debug(this.formatMessage('debug', message, meta));
     }
   }
 
   info(message: string, meta?: any): void {
-    if (this.shouldLog('info')) {
+    if (this.shouldLog('info') && !this.mcpMode) {
       console.info(this.formatMessage('info', message, meta));
     }
   }
 
   warn(message: string, meta?: any): void {
-    if (this.shouldLog('warn')) {
+    if (this.shouldLog('warn') && !this.mcpMode) {
       console.warn(this.formatMessage('warn', message, meta));
     }
   }
 
   error(message: string, meta?: any): void {
-    if (this.shouldLog('error')) {
+    if (this.shouldLog('error') && !this.mcpMode) {
       console.error(this.formatMessage('error', message, meta));
     }
   }
