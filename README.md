@@ -2,6 +2,10 @@
 
 npm run devプロセスを管理するMCPサーバーです。プロジェクトの自動検出、バックグラウンド実行、ログ監視、ポート管理機能を提供します。
 
+<a href="https://glama.ai/mcp/servers/@masamunet/npm-dev-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@masamunet/npm-dev-mcp/badge" alt="npm-dev-mcp MCP server" />
+</a>
+
 ## 機能
 
 - **プロジェクト自動検出**: package.jsonとdevスクリプトを持つディレクトリを自動で検索
