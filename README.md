@@ -9,7 +9,7 @@ npm run devプロセスを管理するMCPサーバーです。プロジェクト
 - **環境変数読み込み**: .envファイルの自動検出・適用
 - **ポート管理**: 開発サーバーが使用するポートの自動検出
 - **ログ監視**: リアルタイムログ監視と履歴管理
-- **プロセス管理**: 安全な開始・停止・再起動
+- **プロセス管理**: 複数プロジェクトの並行実行、安全な開始・停止・再起動
 
 ## 利用可能なツール
 
@@ -37,7 +37,7 @@ npm run devプロセスを管理するMCPサーバーです。プロジェクト
 指定ディレクトリでnpm run devをバックグラウンドで開始します。
 
 **パラメータ:**
-- `directory` (オプション): 実行ディレクトリ（未指定時は自動検出）
+- `directory` (オプション): 実行ディレクトリ（未指定時は自動検出）。異なるディレクトリを指定することで、複数の開発サーバーを同時に起動できます。
 
 ```json
 {
@@ -59,21 +59,24 @@ npm run devプロセスの状態を確認します。
 ```json
 {
   "success": true,
-  "message": "Dev serverはrunning状態です",
+  "message": "2個のDev serverが実行中です",
   "isRunning": true,
-  "process": {
-    "pid": 12345,
-    "directory": "/path/to/project",
-    "status": "running",
-    "ports": [3000],
-    "uptime": 120000
-  },
-  "logs": {
-    "total": 50,
-    "errors": 0,
-    "warnings": 2,
-    "hasRecentErrors": false
-  }
+  "processes": [
+    {
+      "pid": 12345,
+      "directory": "/path/to/project-a",
+      "status": "running",
+      "ports": [3000],
+      "uptime": 120000
+    },
+    {
+      "pid": 12346,
+      "directory": "/path/to/project-b",
+      "status": "running",
+      "ports": [3001],
+      "uptime": 60000
+    }
+  ]
 }
 ```
 
@@ -82,6 +85,7 @@ npm run devのログを取得します。
 
 **パラメータ:**
 - `lines` (オプション): 取得行数（デフォルト：50、最大：1000）
+- `directory` (オプション): 対象のプロジェクトディレクトリ。複数実行時に特定するために使用します。
 
 ```json
 {
@@ -101,6 +105,9 @@ npm run devのログを取得します。
 ### stop_dev_server
 npm run devプロセスを停止します。
 
+**パラメータ:**
+- `directory` (オプション): 対象のプロジェクトディレクトリ。複数実行時に特定するために使用します。
+
 ```json
 {
   "success": true,
@@ -116,6 +123,9 @@ npm run devプロセスを停止します。
 
 ### restart_dev_server
 npm run devプロセスを再起動します。
+
+**パラメータ:**
+- `directory` (オプション): 対象のプロジェクトディレクトリ。複数実行時に特定するために使用します。
 
 ```json
 {
@@ -169,15 +179,17 @@ MCPサーバー自身のヘルス状態を取得します。
   "success": true,
   "message": "状態の復旧が完了しました",
   "recovery": {
-    "devProcessRecovered": true,
+    "devProcessesRecovered": true,
     "projectContextRecovered": true,
     "warnings": [],
-    "previousProcess": {
-      "pid": 12345,
-      "directory": "/path/to/project",
-      "status": "running",
-      "ports": [3000]
-    },
+    "restoredProcesses": [
+      {
+        "pid": 12345,
+        "directory": "/path/to/project",
+        "status": "running",
+        "ports": [3000]
+      }
+    ],
     "recoveryTimestamp": "2024-01-01T00:00:00.000Z"
   }
 }
@@ -203,11 +215,13 @@ npx @masamunet/npm-dev-mcp start
 # 状態確認
 npx @masamunet/npm-dev-mcp status
 
-# ログを表示
+# ログを表示（ディレクトリ指定可）
 npx @masamunet/npm-dev-mcp logs 50
+npx @masamunet/npm-dev-mcp logs /path/to/app 50
 
-# サーバー停止
+# サーバー停止（ディレクトリ指定可）
 npx @masamunet/npm-dev-mcp stop
+npx @masamunet/npm-dev-mcp stop /path/to/app
 
 # ヘルプ表示
 npx @masamunet/npm-dev-mcp --help
