@@ -9,50 +9,53 @@ export const restartDevServerSchema: Tool = {
   description: 'npm run devプロセス再起動',
   inputSchema: {
     type: 'object',
-    properties: {},
+    properties: {
+      directory: {
+        type: 'string',
+        description: '再起動対象のディレクトリ（複数起動時に指定。未指定時は唯一のプロセスまたはエラー）'
+      }
+    },
     additionalProperties: false
   }
 };
 
-export async function restartDevServer(): Promise<string> {
+export async function restartDevServer(args: { directory?: string } = {}): Promise<string> {
   try {
-    logger.info('Restarting dev server');
-    
     const processManager = ProcessManager.getInstance();
-    
-    // Get current status before restarting
-    const previousStatus = await processManager.getStatus();
-    
-    if (!previousStatus) {
+
+    // Check if target process exists BEFORE restarting
+    const targetProcess = processManager.getProcess(args.directory);
+    const directoryToRestart = targetProcess?.directory || args.directory;
+
+    if (!targetProcess && !args.directory) {
       return JSON.stringify({
         success: false,
-        message: 'Dev serverが起動していません。start_dev_serverを使用して開始してください。',
+        message: 'Dev serverが起動していません（またはディレクトリが指定されていません）。start_dev_serverを使用して開始してください。',
         restarted: false
       });
     }
-    
-    const previousDirectory = previousStatus.directory;
-    const previousPid = previousStatus.pid;
-    const previousPorts = [...previousStatus.ports];
-    const previousUptime = Date.now() - previousStatus.startTime.getTime();
-    
+
+    logger.info('Restarting dev server', { directory: directoryToRestart });
+
+    const previousDirectory = targetProcess?.directory || args.directory || 'unknown';
+    const previousPid = targetProcess?.pid;
+    const previousPorts = targetProcess ? [...targetProcess.ports] : [];
+    const previousUptime = targetProcess ? Date.now() - targetProcess.startTime.getTime() : 0;
+
     // Restart the dev server
-    const newProcess = await processManager.restartDevServer();
-    
+    const newProcess = await processManager.restartDevServer(args.directory);
+
     // Wait a moment to get updated status
     await new Promise(resolve => setTimeout(resolve, 3000));
-    const newStatus = await processManager.getStatus();
-    
-    const result = {
+
+    // Get new status from correct process
+    const allProcesses = await processManager.getStatus();
+    const newStatus = allProcesses.find(p => p.directory === newProcess.directory);
+
+    const result: any = {
       success: true,
       message: 'Dev serverを正常に再起動しました',
       restarted: true,
-      previousProcess: {
-        pid: previousPid,
-        directory: previousDirectory,
-        ports: previousPorts,
-        uptime: previousUptime
-      },
       newProcess: {
         pid: newProcess.pid,
         directory: newProcess.directory,
@@ -61,25 +64,35 @@ export async function restartDevServer(): Promise<string> {
         ports: newStatus?.ports || newProcess.ports
       }
     };
-    
+
+    if (previousPid) {
+      result.previousProcess = {
+        pid: previousPid,
+        directory: previousDirectory,
+        ports: previousPorts,
+        uptime: previousUptime
+      };
+    }
+
     if (newProcess.ports.length > 0) {
       result.message += `\n新しいプロセスのポート: ${newProcess.ports.join(', ')}`;
     }
-    
+
     // Compare ports if they changed
-    const portsChanged = JSON.stringify(previousPorts.sort()) !== JSON.stringify((newStatus?.ports || newProcess.ports).sort());
-    if (portsChanged) {
-      result.message += `\nポートが変更されました: ${previousPorts.join(', ')} → ${(newStatus?.ports || newProcess.ports).join(', ')}`;
+    const currentPorts = newStatus?.ports || newProcess.ports;
+    const portsChanged = JSON.stringify(previousPorts.sort()) !== JSON.stringify([...currentPorts].sort());
+    if (portsChanged && previousPorts.length > 0) {
+      result.message += `\nポートが変更されました: ${previousPorts.join(', ')} → ${currentPorts.join(', ')}`;
     }
-    
-    logger.info('Dev server restart completed', { 
+
+    logger.info('Dev server restart completed', {
       previousPid: previousPid,
       newPid: newProcess.pid,
       newPorts: newProcess.ports
     });
-    
+
     return JSON.stringify(result, null, 2);
-    
+
   } catch (error) {
     logger.error('Failed to restart dev server', { error });
     return JSON.stringify({

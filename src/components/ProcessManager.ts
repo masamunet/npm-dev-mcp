@@ -7,18 +7,21 @@ import { PortDetector } from './PortDetector.js';
 import { ProjectContextManager } from '../context/ProjectContextManager.js';
 import { StateManager } from './StateManager.js';
 
+interface RunningProcess {
+  info: DevProcess;
+  child: ChildProcess | null;
+  logManager: LogManager;
+}
+
 export class ProcessManager {
   private static instance: ProcessManager | null = null;
   private logger = Logger.getInstance();
-  private currentProcess: DevProcess | null = null;
-  private childProcess: ChildProcess | null = null;
-  private logManager: LogManager;
+  private processes: Map<string, RunningProcess> = new Map();
   private portDetector: PortDetector;
 
   constructor() {
-    this.logManager = new LogManager();
     this.portDetector = new PortDetector();
-    
+
     // 既存のプロセス状態を復元（非同期で実行）
     this.restoreProcessState().catch(error => {
       this.logger.warn('Failed to restore process state during construction', { error });
@@ -33,7 +36,7 @@ export class ProcessManager {
   }
 
   async startDevServer(
-    directory?: string, 
+    directory?: string,
     env?: Record<string, string>
   ): Promise<DevProcess> {
     // Use project context if no directory specified
@@ -46,31 +49,36 @@ export class ProcessManager {
         targetDirectory = process.cwd();
       }
     }
-    
+
     this.logger.info(`Starting dev server in ${targetDirectory}`);
 
-    // Check if a process is already running
-    if (this.currentProcess && await this.isCurrentProcessRunning()) {
-      this.logger.info('Dev server is already running');
-      return this.currentProcess;
+    // Check if a process is already running for this directory
+    const existingProcess = this.processes.get(targetDirectory);
+    if (existingProcess && await this.isProcessRunning(existingProcess)) {
+      this.logger.info(`Dev server is already running for ${targetDirectory}`);
+      return existingProcess.info;
     }
 
     try {
-      // Clean up any stale process references
-      await this.cleanup();
+      // Clean up any stale process for this directory
+      if (existingProcess) {
+        await this.cleanupProcess(targetDirectory);
+      }
 
       // Spawn the npm run dev process
-      this.childProcess = spawn('npm', ['run', 'dev'], {
+      const childProcess = spawn('npm', ['run', 'dev'], {
         cwd: targetDirectory,
         env: env || process.env,
         detached: false, // Keep attached for better control
         stdio: ['ignore', 'pipe', 'pipe']
       });
 
-      const pid = this.childProcess.pid!;
-      
-      // Create process info
-      this.currentProcess = {
+      const pid = childProcess.pid!;
+
+      // Create properties
+      const logManager = new LogManager();
+
+      const processInfo: DevProcess = {
         pid,
         directory: targetDirectory,
         status: 'starting',
@@ -78,49 +86,62 @@ export class ProcessManager {
         ports: []
       };
 
+      // Store in map
+      this.processes.set(targetDirectory, {
+        info: processInfo,
+        child: childProcess,
+        logManager
+      });
+
       // Start logging
-      await this.logManager.startLogging(this.childProcess);
+      await logManager.startLogging(childProcess);
 
       // Set up process event handlers
-      this.setupProcessHandlers();
+      this.setupProcessHandlers(targetDirectory, childProcess);
 
       // Wait a moment for the process to potentially start
-      await this.waitForProcessStart();
+      await this.waitForProcessStart(targetDirectory);
 
       // Detect ports after a short delay
       setTimeout(async () => {
-        if (this.currentProcess) {
-          this.currentProcess.ports = await this.portDetector.getPortsByPid(pid);
-          this.logger.info(`Detected ports: ${this.currentProcess.ports.join(', ')}`);
+        const proc = this.processes.get(targetDirectory);
+        if (proc) {
+          proc.info.ports = await this.portDetector.getPortsByPid(pid);
+          this.logger.info(`Detected ports for ${targetDirectory}: ${proc.info.ports.join(', ')}`);
+          this.saveCurrentState();
         }
       }, 3000);
 
-      this.logger.info(`Dev server started with PID ${pid}`);
-      return this.currentProcess;
+      this.logger.info(`Dev server started with PID ${pid} for ${targetDirectory}`);
+      return processInfo;
 
     } catch (error) {
-      this.logger.error('Failed to start dev server', { error });
-      if (this.currentProcess) {
-        this.currentProcess.status = 'error';
+      this.logger.error(`Failed to start dev server for ${targetDirectory}`, { error });
+      const proc = this.processes.get(targetDirectory);
+      if (proc) {
+        proc.info.status = 'error';
       }
       throw new Error(`Failed to start dev server: ${error}`);
     }
   }
 
-  async stopDevServer(): Promise<boolean> {
-    this.logger.info('Stopping dev server');
+  async stopDevServer(directory?: string): Promise<boolean> {
+    this.logger.info(`Stopping dev server${directory ? ` for ${directory}` : ''}`);
 
-    if (!this.currentProcess) {
-      this.logger.info('No dev server is running');
-      return true;
+    const targetDirectory = this.resolveTargetDirectory(directory);
+    const processData = this.processes.get(targetDirectory);
+
+    if (!processData) {
+      this.logger.info(`No dev server running for ${targetDirectory}`);
+      return true; // Already stopped or not found
     }
 
     try {
-      const pid = this.currentProcess.pid;
-      
+      const pid = processData.info.pid;
+
       // Try graceful shutdown first
-      if (this.childProcess) {
-        this.childProcess.kill('SIGTERM');
+      if (processData.child) {
+        processData.child.kill('SIGTERM');
       } else {
         await killProcess(pid, 'SIGTERM');
       }
@@ -130,126 +151,132 @@ export class ProcessManager {
 
       // Check if process is still running
       if (await isProcessRunning(pid)) {
-        this.logger.warn('Process did not stop gracefully, forcing termination');
+        this.logger.warn(`Process ${pid} did not stop gracefully, forcing termination`);
         await killProcess(pid, 'SIGKILL');
       }
 
-      await this.cleanup();
-      this.logger.info('Dev server stopped successfully');
+      await this.cleanupProcess(targetDirectory);
+      this.logger.info(`Dev server stopped successfully for ${targetDirectory}`);
       return true;
 
     } catch (error) {
-      this.logger.error('Failed to stop dev server', { error });
-      await this.cleanup(); // Clean up anyway
+      this.logger.error(`Failed to stop dev server for ${targetDirectory}`, { error });
+      await this.cleanupProcess(targetDirectory); // Clean up anyway
       return false;
     }
   }
 
-  async restartDevServer(): Promise<DevProcess> {
-    this.logger.info('Restarting dev server');
-    
-    let directory = this.currentProcess?.directory;
-    if (!directory) {
-      const contextManager = ProjectContextManager.getInstance();
-      if (contextManager.isInitialized()) {
-        directory = contextManager.getContext().rootDirectory;
-      } else {
-        directory = process.cwd();
-      }
-    }
-    
-    await this.stopDevServer();
-    
+  async restartDevServer(directory?: string): Promise<DevProcess> {
+    this.logger.info(`Restarting dev server${directory ? ` for ${directory}` : ''}`);
+
+    const targetDirectory = this.resolveTargetDirectory(directory);
+
+    await this.stopDevServer(targetDirectory);
+
     // Wait a moment before restarting
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    return this.startDevServer(directory);
+
+    return this.startDevServer(targetDirectory);
   }
 
-  async getStatus(): Promise<DevProcess | null> {
-    if (!this.currentProcess) {
-      return null;
-    }
+  async getStatus(): Promise<DevProcess[]> {
+    const activeProcesses: DevProcess[] = [];
 
-    // Update the process status
-    const isRunning = await this.isCurrentProcessRunning();
-    
-    if (!isRunning && this.currentProcess.status === 'running') {
-      this.currentProcess.status = 'stopped';
-    }
+    for (const [dir, proc] of this.processes.entries()) {
+      // Update the process status
+      const isRunning = await this.isProcessRunning(proc);
 
-    // Try to update ports if the process is running
-    if (isRunning && this.currentProcess.ports.length === 0) {
-      try {
-        this.currentProcess.ports = await this.portDetector.getPortsByPid(this.currentProcess.pid);
-      } catch {
-        // Ignore port detection errors
+      if (!isRunning && proc.info.status === 'running') {
+        proc.info.status = 'stopped';
       }
+
+      // Try to update ports if the process is running
+      if (isRunning && proc.info.ports.length === 0) {
+        try {
+          proc.info.ports = await this.portDetector.getPortsByPid(proc.info.pid);
+        } catch {
+          // Ignore port detection errors
+        }
+      }
+
+      activeProcesses.push({ ...proc.info });
     }
 
-    return { ...this.currentProcess };
+    return activeProcesses;
   }
 
-  getCurrentProcess(): DevProcess | null {
-    return this.currentProcess;
+  getProcess(directory?: string): DevProcess | null {
+    const targetDirectory = this.resolveTargetDirectory(directory);
+    return this.processes.get(targetDirectory)?.info || null;
   }
 
-  private async isCurrentProcessRunning(): Promise<boolean> {
-    if (!this.currentProcess) {
-      return false;
-    }
-    
-    return await isProcessRunning(this.currentProcess.pid);
-  }
+  private resolveTargetDirectory(directory?: string): string {
+    if (directory) return directory;
 
-  private setupProcessHandlers(): void {
-    if (!this.childProcess || !this.currentProcess) {
-      return;
+    // If no directory specified, and only one process running, return that
+    if (this.processes.size === 1) {
+      const dir = this.processes.keys().next().value;
+      if (dir) return dir;
     }
 
-    this.childProcess.on('spawn', () => {
-      this.logger.debug('Process spawned successfully');
-      if (this.currentProcess) {
-        this.currentProcess.status = 'running';
+    // Fallback to project context or CWD
+    const contextManager = ProjectContextManager.getInstance();
+    if (contextManager.isInitialized()) {
+      return contextManager.getContext().rootDirectory;
+    }
+    return process.cwd();
+  }
+
+  private async isProcessRunning(proc: RunningProcess): Promise<boolean> {
+    return await isProcessRunning(proc.info.pid);
+  }
+
+  private setupProcessHandlers(directory: string, childProcess: ChildProcess): void {
+    const proc = this.processes.get(directory);
+    if (!proc) return;
+
+    childProcess.on('spawn', () => {
+      this.logger.debug(`Process spawned successfully for ${directory}`);
+      if (proc.info) {
+        proc.info.status = 'running';
         this.saveCurrentState();
       }
     });
 
-    this.childProcess.on('error', (error) => {
-      this.logger.error('Process error', { error });
-      if (this.currentProcess) {
-        this.currentProcess.status = 'error';
+    childProcess.on('error', (error) => {
+      this.logger.error(`Process error for ${directory}`, { error });
+      if (proc.info) {
+        proc.info.status = 'error';
         this.saveCurrentState();
       }
     });
 
-    this.childProcess.on('exit', (code, signal) => {
-      this.logger.info(`Process exited with code ${code}, signal ${signal}`);
-      if (this.currentProcess) {
-        this.currentProcess.status = 'stopped';
+    childProcess.on('exit', (code, signal) => {
+      this.logger.info(`Process for ${directory} exited with code ${code}, signal ${signal}`);
+      if (proc.info) {
+        proc.info.status = 'stopped';
         this.saveCurrentState();
       }
     });
 
     // Listen for port information in the output
-    if (this.childProcess.stdout) {
-      this.childProcess.stdout.on('data', (data: Buffer) => {
+    if (childProcess.stdout) {
+      childProcess.stdout.on('data', (data: Buffer) => {
         const output = data.toString();
         const ports = parsePort(output);
-        if (ports.length > 0 && this.currentProcess) {
+        if (ports.length > 0) {
           // Merge with existing ports
-          const allPorts = [...this.currentProcess.ports, ...ports];
-          this.currentProcess.ports = [...new Set(allPorts)]; // Remove duplicates
+          const allPorts = [...proc.info.ports, ...ports];
+          proc.info.ports = [...new Set(allPorts)]; // Remove duplicates
           this.saveCurrentState();
         }
       });
     }
   }
 
-  private async waitForProcessStart(): Promise<void> {
-    if (!this.currentProcess) {
-      return;
-    }
+  private async waitForProcessStart(directory: string): Promise<void> {
+    const proc = this.processes.get(directory);
+    if (!proc) return;
 
     // Wait up to 10 seconds for the process to start properly
     const maxWaitTime = 10000;
@@ -257,11 +284,11 @@ export class ProcessManager {
     let waited = 0;
 
     while (waited < maxWaitTime) {
-      if (this.currentProcess.status === 'error') {
+      if (proc.info.status === 'error') {
         throw new Error('Process failed to start');
       }
-      
-      if (this.currentProcess.status === 'running') {
+
+      if (proc.info.status === 'running') {
         return;
       }
 
@@ -270,24 +297,33 @@ export class ProcessManager {
     }
 
     // If we're still starting after the wait time, assume it's running
-    if (this.currentProcess.status === 'starting') {
-      this.currentProcess.status = 'running';
+    if (proc.info.status === 'starting') {
+      proc.info.status = 'running';
+    }
+  }
+
+  private async cleanupProcess(directory: string): Promise<void> {
+    const proc = this.processes.get(directory);
+    if (proc) {
+      try {
+        await proc.logManager.stopLogging();
+      } catch {
+        // Ignore cleanup errors
+      }
+      this.processes.delete(directory);
+      this.saveCurrentState();
     }
   }
 
   private async cleanup(): Promise<void> {
-    try {
-      await this.logManager.stopLogging();
-    } catch {
-      // Ignore cleanup errors
+    for (const directory of this.processes.keys()) {
+      await this.cleanupProcess(directory);
     }
-
-    this.childProcess = null;
-    this.currentProcess = null;
   }
 
-  getLogManager(): LogManager {
-    return this.logManager;
+  getLogManager(directory?: string): LogManager | null {
+    const targetDirectory = this.resolveTargetDirectory(directory);
+    return this.processes.get(targetDirectory)?.logManager || null;
   }
 
   /**
@@ -296,7 +332,8 @@ export class ProcessManager {
   private saveCurrentState(): void {
     try {
       const stateManager = StateManager.getInstance();
-      stateManager.saveDevProcessState(this.currentProcess).catch(error => {
+      const processes = Array.from(this.processes.values()).map(p => p.info);
+      stateManager.saveDevProcessState(processes).catch(error => {
         this.logger.warn('Failed to save process state', { error });
       });
     } catch (error) {
@@ -311,26 +348,32 @@ export class ProcessManager {
     try {
       const stateManager = StateManager.getInstance();
       const state = await stateManager.loadState();
-      
-      if (state?.devProcess) {
-        const processInfo = state.devProcess;
-        
-        // プロセスがまだ実行中かチェック
-        if (await isProcessRunning(processInfo.pid)) {
-          this.currentProcess = {
-            pid: processInfo.pid,
-            directory: processInfo.directory,
-            status: 'running',
-            startTime: new Date(processInfo.startTime),
-            ports: processInfo.ports
-          };
-          
-          this.logger.info(`Restored existing dev server process: PID ${processInfo.pid}`);
-          
-          // 既存プロセスのstdout/stderrを再接続することはできないため、
-          // ログマネージャーは新しいプロセス起動時のみ有効
-        } else {
-          // プロセスが存在しない場合は状態をクリア
+
+      if (state?.devProcesses) {
+        for (const [dir, processInfo] of Object.entries(state.devProcesses)) {
+          // プロセスがまだ実行中かチェック
+          if (await isProcessRunning(processInfo.pid)) {
+            // LogManagerは新規作成（既存ログは復元できないが、インスタンスは必要）
+            const logManager = new LogManager();
+
+            this.processes.set(dir, {
+              info: {
+                pid: processInfo.pid,
+                directory: processInfo.directory,
+                status: 'running',
+                startTime: new Date(processInfo.startTime),
+                ports: processInfo.ports
+              },
+              child: null, // 再接続不可
+              logManager
+            });
+
+            this.logger.info(`Restored existing dev server process for ${dir}: PID ${processInfo.pid}`);
+          }
+        }
+
+        // 実行していないプロセスのクリーンアップは saveCurrentState で自然に行われる（あるいは明示的に行う）
+        if (this.processes.size === 0 && Object.keys(state.devProcesses).length > 0) {
           await stateManager.clearDevProcessState();
           this.logger.debug('Cleared stale process state');
         }

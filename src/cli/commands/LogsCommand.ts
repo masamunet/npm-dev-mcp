@@ -29,16 +29,28 @@ export class LogsCommand implements CLICommand {
 
   async execute(args: string[], options: CLIOptions): Promise<void> {
     try {
-      const processManager = new ProcessManager();
+      const processManager = ProcessManager.getInstance();
       const status = await processManager.getStatus();
-      
-      if (!status) {
-        const message = options.json 
+
+      if (status.length === 0) {
+        const message = options.json
           ? JSON.stringify({ success: false, error: 'No dev server is running' }, null, 2)
           : '💤 No dev server is running. Start it with "start" command.';
         console.log(message);
         return;
       }
+
+      // Determine target process
+      // For now, if multiple, pick first or use directory arg if valid (CLI doesn't expose it yet easily in args[] for this command maybe?)
+      // We will assume if multiple are running, we might need a way to specify.
+      // But standard `logs` command usually implies current context.
+      // Let's pick the one matching CWD or just the first one.
+
+      // Update usage to allow directory? 'npx npm-dev-mcp logs [directory] [lines] [options]' is ambiguous.
+      // Let's assume Context or First.
+      const targetDirectory = status[0].directory; // Simplified for now.
+
+      // ... continue with logs for targetDirectory
 
       // Parse lines argument
       let lines = 50; // default
@@ -50,9 +62,9 @@ export class LogsCommand implements CLICommand {
       }
 
       if (options.follow) {
-        await this.followLogs(processManager, lines, options);
+        await this.followLogs(processManager, lines, options, targetDirectory);
       } else {
-        await this.showLogs(processManager, lines, options);
+        await this.showLogs(processManager, lines, options, targetDirectory);
       }
 
     } catch (error) {
@@ -60,10 +72,14 @@ export class LogsCommand implements CLICommand {
     }
   }
 
-  private async showLogs(processManager: ProcessManager, lines: number, options: CLIOptions): Promise<void> {
-    const logManager = processManager.getLogManager();
+  private async showLogs(processManager: ProcessManager, lines: number, options: CLIOptions, directory?: string): Promise<void> {
+    const logManager = processManager.getLogManager(directory);
+    if (!logManager) {
+      console.error('Failed to get log manager for process');
+      return;
+    }
     let logs = await logManager.getLogs(lines);
-    
+
     // Filter by level if specified
     if (options.level) {
       const level = options.level.toLowerCase();
@@ -74,15 +90,16 @@ export class LogsCommand implements CLICommand {
     console.log(output);
   }
 
-  private async followLogs(processManager: ProcessManager, lines: number, options: CLIOptions): Promise<void> {
+  private async followLogs(processManager: ProcessManager, lines: number, options: CLIOptions, directory?: string): Promise<void> {
     console.log(`👀 Following logs (Press Ctrl+C to exit)...\n`);
-    
+
     // Show initial logs
-    await this.showLogs(processManager, lines, { ...options, json: false });
-    
-    const logManager = processManager.getLogManager();
+    await this.showLogs(processManager, lines, { ...options, json: false }, directory);
+
+    const logManager = processManager.getLogManager(directory);
+    if (!logManager) return;
     let lastLogCount = (await logManager.getLogs(1000)).length;
-    
+
     const checkForNewLogs = async () => {
       try {
         const currentLogs = await logManager.getLogs(1000);
@@ -90,13 +107,13 @@ export class LogsCommand implements CLICommand {
           // Show only new logs
           const newLogs = currentLogs.slice(lastLogCount);
           let filteredLogs = newLogs;
-          
+
           // Apply level filter
           if (options.level) {
             const level = options.level.toLowerCase();
             filteredLogs = newLogs.filter(log => log.level === level);
           }
-          
+
           // Display new logs
           filteredLogs.forEach(log => {
             const timestamp = log.timestamp.toLocaleTimeString();
@@ -104,7 +121,7 @@ export class LogsCommand implements CLICommand {
             const sourceIcon = log.source === 'stderr' ? '🔴' : '🔵';
             console.log(`${timestamp} ${levelIcon}${sourceIcon} ${log.message}`);
           });
-          
+
           lastLogCount = currentLogs.length;
         }
       } catch (error) {
@@ -114,7 +131,7 @@ export class LogsCommand implements CLICommand {
 
     // Check for new logs every second
     const interval = setInterval(checkForNewLogs, 1000);
-    
+
     // Handle Ctrl+C
     process.on('SIGINT', () => {
       clearInterval(interval);

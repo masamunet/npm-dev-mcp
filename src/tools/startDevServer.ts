@@ -24,39 +24,41 @@ export const startDevServerSchema: Tool = {
 export async function startDevServer(args: { directory?: string }): Promise<string> {
   try {
     logger.info('Starting dev server', { directory: args.directory });
-    
+
     let targetDirectory = args.directory;
     let envPath: string | undefined;
-    
+
     // If no directory specified, auto-detect
     if (!targetDirectory) {
       const scanner = new ProjectScanner();
       const bestProject = await scanner.findBestProject();
-      
+
       if (!bestProject) {
         return JSON.stringify({
           success: false,
           message: 'devスクリプトが定義されたpackage.jsonが見つかりませんでした。scan_project_dirsを実行して利用可能なプロジェクトを確認してください。'
         });
       }
-      
+
       targetDirectory = bestProject.directory;
       envPath = bestProject.envPath;
       logger.info(`Auto-detected project directory: ${targetDirectory}`);
     }
-    
+
     // Load environment variables
     const envLoader = new EnvLoader();
     const env = await envLoader.prepareEnvironment(envPath);
-    
+
     // Start the dev server
     const processManager = ProcessManager.getInstance();
     const devProcess = await processManager.startDevServer(targetDirectory, env);
-    
+
     // Wait a moment to get initial status
     await new Promise(resolve => setTimeout(resolve, 2000));
-    const status = await processManager.getStatus();
-    
+    // Wait a moment to get initial status
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    await processManager.getStatus(); // Update status/ports as side effect
+
     const result = {
       success: true,
       message: 'Dev serverが開始されました',
@@ -73,18 +75,18 @@ export async function startDevServer(args: { directory?: string }): Promise<stri
         nodeEnv: env.NODE_ENV || 'development'
       }
     };
-    
+
     if (devProcess.ports.length > 0) {
       result.message += `\n起動ポート: ${devProcess.ports.join(', ')}`;
     }
-    
-    logger.info(`Dev server started successfully`, { 
-      pid: devProcess.pid, 
-      ports: devProcess.ports 
+
+    logger.info(`Dev server started successfully`, {
+      pid: devProcess.pid,
+      ports: devProcess.ports
     });
-    
+
     return JSON.stringify(result, null, 2);
-    
+
   } catch (error) {
     logger.error('Failed to start dev server', { error });
     return JSON.stringify({

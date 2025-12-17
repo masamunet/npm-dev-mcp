@@ -57,11 +57,11 @@ export async function autoRecover(args: {
   const healthChecker = HealthChecker.getInstance();
   const processManager = ProcessManager.getInstance();
   const stateManager = StateManager.getInstance();
-  
+
   const maxRetries = args.maxRetries || 3;
   const forceRecover = args.forceRecover || false;
   const restartMcp = args.restartMcp || false;
-  
+
   let attempts = 0;
   const warnings: string[] = [];
   const steps = {
@@ -82,7 +82,7 @@ export async function autoRecover(args: {
       try {
         const healthStatus = await healthChecker.performHealthCheck();
         steps.healthCheck = true;
-        
+
         if (healthStatus.isHealthy) {
           logger.info('System is healthy, no recovery needed');
           return JSON.stringify({
@@ -108,22 +108,26 @@ export async function autoRecover(args: {
 
       // Step 2: プロセス復旧
       try {
-        const currentProcess = processManager.getCurrentProcess();
-        if (!currentProcess || currentProcess.status !== 'running') {
+        const activeProcesses = await processManager.getStatus();
+        const noRunningProcesses = activeProcesses.every(p => p.status !== 'running');
+
+        if (noRunningProcesses) {
           logger.info('Attempting process recovery');
-          
+
           // 状態から復旧を試行
           const recoveryResult = await recoverFromState({ force: forceRecover });
           const result = JSON.parse(recoveryResult);
-          
+
           if (result.success) {
             steps.processRecovery = true;
             logger.info('Process recovery successful');
           } else {
             warnings.push(`プロセス復旧失敗: ${result.message}`);
-            
+
             // 復旧に失敗した場合は新しいプロセスを開始
             try {
+              // Start a default one if none exist? Or just skip?
+              // Maybe start in CWD as fallback
               await processManager.startDevServer();
               steps.processRecovery = true;
               logger.info('Started new dev server process');
@@ -133,7 +137,7 @@ export async function autoRecover(args: {
           }
         } else {
           steps.processRecovery = true;
-          logger.info('Process is already running');
+          logger.info('At least one process is already running');
         }
       } catch (error) {
         logger.error('Process recovery failed', { error });
@@ -168,7 +172,7 @@ export async function autoRecover(args: {
       try {
         await new Promise(resolve => setTimeout(resolve, 2000)); // 2秒待機
         const postRecoveryHealth = await healthChecker.performHealthCheck();
-        
+
         if (postRecoveryHealth.isHealthy) {
           logger.info('Recovery successful, system is now healthy');
           return JSON.stringify({
@@ -185,7 +189,7 @@ export async function autoRecover(args: {
             attempt: attempts,
             devServerStatus: postRecoveryHealth.devServerStatus
           });
-          
+
           if (attempts < maxRetries) {
             await new Promise(resolve => setTimeout(resolve, 5000)); // 5秒待機してリトライ
           }
@@ -198,7 +202,7 @@ export async function autoRecover(args: {
 
     // 最大試行回数に達した場合
     logger.error('Auto recovery failed after maximum attempts', { attempts: maxRetries });
-    
+
     return JSON.stringify({
       success: false,
       message: `自動復旧が失敗しました（${maxRetries}回試行）`,
@@ -210,7 +214,7 @@ export async function autoRecover(args: {
 
   } catch (error) {
     logger.error('Auto recovery process failed', { error });
-    
+
     return JSON.stringify({
       success: false,
       message: `自動復旧プロセスでエラーが発生しました: ${error}`,
@@ -227,25 +231,25 @@ export async function autoRecover(args: {
  */
 export async function quickRecover(): Promise<string> {
   const logger = Logger.getInstance();
-  
+
   try {
     logger.info('Starting quick recovery for Claude Code session');
-    
+
     // 基本的な自動復旧を実行
     const result = await autoRecover({
       maxRetries: 2,
       forceRecover: true,
       restartMcp: false
     });
-    
+
     const recovery = JSON.parse(result) as AutoRecoveryResult;
-    
+
     if (recovery.success) {
       return `✓ 復旧完了: ${recovery.message}\n${recovery.warnings.length > 0 ? `警告: ${recovery.warnings.join(', ')}` : ''}`;
     } else {
       return `✗ 復旧失敗: ${recovery.message}\n手動での \`recover_from_state\` 実行または PM2 再起動を検討してください。`;
     }
-    
+
   } catch (error) {
     logger.error('Quick recovery failed', { error });
     return `✗ 復旧エラー: ${error}\n手動復旧が必要です。`;

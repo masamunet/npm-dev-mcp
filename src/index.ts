@@ -78,7 +78,7 @@ async function handleDependencyCheck(toolName: string): Promise<any | null> {
     logger.warn(`MCP initializer not available for tool: ${toolName}`);
     return null;
   }
-  
+
   if (!(toolName in SERVICE_DEPENDENCIES)) {
     return null;
   }
@@ -88,11 +88,11 @@ async function handleDependencyCheck(toolName: string): Promise<any | null> {
     return null;
   } catch (dependencyError) {
     const errorMessage = dependencyError instanceof Error ? dependencyError.message : String(dependencyError);
-    logger.warn(`Tool ${toolName} dependency not ready`, { 
+    logger.warn(`Tool ${toolName} dependency not ready`, {
       error: errorMessage,
-      tool: toolName 
+      tool: toolName
     });
-    
+
     return {
       content: [
         {
@@ -113,16 +113,16 @@ async function handleDependencyCheck(toolName: string): Promise<any | null> {
 // Handle tool calls
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-  
+
   logger.info(`Executing tool: ${name}`, { args });
-  
+
   try {
     // 依存関係チェック
     const dependencyError = await handleDependencyCheck(name);
     if (dependencyError) {
       return dependencyError;
     }
-    
+
     switch (name) {
       case 'scan_project_dirs':
         return {
@@ -133,7 +133,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
-        
+
       case 'start_dev_server':
         return {
           content: [
@@ -143,7 +143,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
-        
+
       case 'get_dev_status':
         return {
           content: [
@@ -153,37 +153,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
-        
+
       case 'get_dev_logs':
         return {
           content: [
             {
               type: 'text',
-              text: await getDevLogs(args as { lines?: number }),
+              text: await getDevLogs(args as { lines?: number; directory?: string }),
             },
           ],
         };
-        
+
       case 'stop_dev_server':
         return {
           content: [
             {
               type: 'text',
-              text: await stopDevServer(),
+              text: await stopDevServer(args as { directory?: string }),
             },
           ],
         };
-        
+
       case 'restart_dev_server':
         return {
           content: [
             {
               type: 'text',
-              text: await restartDevServer(),
+              text: await restartDevServer(args as { directory?: string }),
             },
           ],
         };
-        
+
       case 'get_health_status':
         return {
           content: [
@@ -193,7 +193,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
-        
+
       case 'recover_from_state':
         return {
           content: [
@@ -203,7 +203,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
-        
+
       case 'auto_recover':
         return {
           content: [
@@ -213,7 +213,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
-        
+
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -242,38 +242,38 @@ server.onerror = (error) => {
 
 process.on('SIGINT', async () => {
   logger.info('Received SIGINT, shutting down gracefully...');
-  
+
   // ヘルスチェックを停止
   const healthChecker = HealthChecker.getInstance();
   healthChecker.cleanup();
-  
+
   // 状態管理をクリーンアップ
   const stateManager = StateManager.getInstance();
   stateManager.cleanup();
-  
+
   // ヘルスエンドポイントを停止
   const healthEndpoint = HealthEndpoint.getInstance();
   healthEndpoint.cleanup();
-  
+
   await server.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   logger.info('Received SIGTERM, shutting down gracefully...');
-  
+
   // ヘルスチェックを停止
   const healthChecker = HealthChecker.getInstance();
   healthChecker.cleanup();
-  
+
   // 状態管理をクリーンアップ
   const stateManager = StateManager.getInstance();
   stateManager.cleanup();
-  
+
   // ヘルスエンドポイントを停止
   const healthEndpoint = HealthEndpoint.getInstance();
   healthEndpoint.cleanup();
-  
+
   await server.close();
   process.exit(0);
 });
@@ -282,12 +282,12 @@ process.on('SIGTERM', async () => {
 function determineRunMode(): 'mcp' | 'cli' {
   // If no arguments or only stdio-related arguments, run as MCP server
   const args = process.argv.slice(2);
-  
+
   // If executed via npx npm-dev-mcp with --mcp flag, run as MCP server
   if (args.includes('--mcp')) {
     return 'mcp';
   }
-  
+
   return args.length === 0 ? 'mcp' : 'cli';
 }
 
@@ -297,13 +297,13 @@ async function startMCPServer() {
     // フェーズ1: 最小限初期化（STDIO接続のみ）
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    
+
     logger.info('MCP JSON-RPC connection established');
     logger.info('Available tools: ' + tools.map(t => t.name).join(', '));
-    
+
     // 初期化インスタンスを作成
     mcpInitializer = new MCPServerInitializer();
-    
+
     // フェーズ2: 背景初期化（非同期実行）
     setImmediate(() => {
       mcpInitializer!.startBackgroundInitialization()
@@ -314,7 +314,7 @@ async function startMCPServer() {
           logger.error('Background service initialization failed', { error });
         });
     });
-    
+
   } catch (error) {
     logger.error('Failed to establish MCP connection', { error });
     process.exit(1);
@@ -327,7 +327,7 @@ async function startCLIMode() {
     const args = process.argv.slice(2);
     const commandRegistry = new CommandRegistry();
     await commandRegistry.executeCommand(args);
-    
+
   } catch (error) {
     logger.error('CLI execution failed', { error });
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -344,23 +344,23 @@ async function main() {
   try {
     // Determine run mode first
     const runMode = determineRunMode();
-    
+
     // MCPモードの場合は早期にログを無効化
     if (runMode === 'mcp') {
       logger.setMcpMode(true);
     }
-    
+
     // Initialize project context
     const contextManager = ProjectContextManager.getInstance();
     await contextManager.initialize(process.cwd());
-    
+
     // Execute run mode
     if (runMode === 'mcp') {
       await startMCPServer();
     } else {
       await startCLIMode();
     }
-    
+
   } catch (error) {
     logger.error('Initialization failed', { error });
     process.exit(1);

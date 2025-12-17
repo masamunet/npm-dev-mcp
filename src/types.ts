@@ -30,8 +30,6 @@ export interface PortInfo {
 
 export interface ServerStatus {
   isRunning: boolean;
-  process?: DevProcess;
-  directory?: string;
-  ports: number[];
+  processes: DevProcess[];
   error?: string;
 }
