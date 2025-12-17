@@ -9,13 +9,15 @@ import { DevProcess } from '../types.js';
 export interface ServerState {
   timestamp: string;
   version: string;
-  devProcess?: {
-    pid: number;
-    directory: string;
-    status: 'running' | 'stopped' | 'error' | 'starting';
-    startTime: string;
-    ports: number[];
-    command: string;
+  devProcesses?: {
+    [directory: string]: {
+      pid: number;
+      directory: string;
+      status: 'running' | 'stopped' | 'error' | 'starting';
+      startTime: string;
+      ports: number[];
+      command: string;
+    }
   };
   projectContext?: {
     currentDirectory: string;
@@ -45,7 +47,7 @@ export class StateManager {
   private constructor() {
     this.logger = Logger.getInstance();
     this.safeErrorHandler = SafeErrorHandler.getInstance();
-    
+
     // 状態ファイルのパスを設定
     const stateDir = join(homedir(), '.npm-dev-mcp');
     this.stateFilePath = join(stateDir, 'state.json');
@@ -77,8 +79,8 @@ export class StateManager {
       // 自動保存を開始
       this.startAutoSave();
 
-      this.logger.info('State manager initialized', { 
-        stateFile: this.stateFilePath 
+      this.logger.info('State manager initialized', {
+        stateFile: this.stateFilePath
       });
 
     } catch (error) {
@@ -123,10 +125,10 @@ export class StateManager {
 
         // ファイルに保存
         await writeFile(this.stateFilePath, JSON.stringify(newState, null, 2), 'utf8');
-        
-        this.logger.debug('State saved successfully', { 
+
+        this.logger.debug('State saved successfully', {
           timestamp: newState.timestamp,
-          hasDevProcess: !!newState.devProcess
+          hasDevProcess: !!newState.devProcesses && Object.keys(newState.devProcesses).length > 0
         });
 
       } finally {
@@ -155,11 +157,11 @@ export class StateManager {
   /**
    * 開発サーバーの状態を保存
    */
-  async saveDevProcessState(process: DevProcess | null): Promise<void> {
-    let devProcess = undefined;
-    
-    if (process) {
-      devProcess = {
+  async saveDevProcessState(processes: DevProcess[]): Promise<void> {
+    const devProcesses: ServerState['devProcesses'] = {};
+
+    for (const process of processes) {
+      devProcesses[process.directory] = {
         pid: process.pid,
         directory: process.directory,
         status: process.status,
@@ -169,7 +171,7 @@ export class StateManager {
       };
     }
 
-    await this.saveState({ devProcess });
+    await this.saveState({ devProcesses });
   }
 
   /**
@@ -209,13 +211,13 @@ export class StateManager {
    */
   async getRecoveryInfo(): Promise<{
     canRecover: boolean;
-    devProcess?: ServerState['devProcess'];
+    devProcesses?: DevProcess[];
     projectContext?: ServerState['projectContext'];
     lastHealthy?: string;
     consecutiveFailures: number;
   }> {
     const state = await this.loadState();
-    
+
     if (!state) {
       return {
         canRecover: false,
@@ -223,9 +225,25 @@ export class StateManager {
       };
     }
 
+    const devProcesses: DevProcess[] = [];
+
+    if (state.devProcesses) {
+      for (const [dir, proc] of Object.entries(state.devProcesses)) {
+        if (proc.status === 'running') {
+          devProcesses.push({
+            pid: proc.pid,
+            directory: proc.directory,
+            status: proc.status,
+            startTime: new Date(proc.startTime),
+            ports: proc.ports
+          });
+        }
+      }
+    }
+
     return {
-      canRecover: !!state.devProcess && state.devProcess.status === 'running',
-      devProcess: state.devProcess,
+      canRecover: devProcesses.length > 0,
+      devProcesses: devProcesses,
       projectContext: state.projectContext,
       lastHealthy: state.healthStatus?.lastHealthy,
       consecutiveFailures: state.healthStatus?.consecutiveFailures || 0
@@ -239,7 +257,7 @@ export class StateManager {
     try {
       const currentState = await this.loadState();
       if (currentState) {
-        const { devProcess, ...restState } = currentState;
+        const { devProcesses, ...restState } = currentState;
         await this.saveState(restState);
         this.logger.debug('Dev process state cleared');
       }
@@ -263,19 +281,25 @@ export class StateManager {
       const updatedState = { ...state };
 
       // 開発プロセスの状態チェック
-      if (state.devProcess) {
+      if (state.devProcesses) {
         const { isProcessRunning } = await import('../utils/processUtils.js');
-        const processExists = await isProcessRunning(state.devProcess.pid);
-        
-        if (!processExists && state.devProcess.status === 'running') {
-          this.logger.warn('Detected stale process state, updating to stopped', {
-            pid: state.devProcess.pid
-          });
-          updatedState.devProcess = {
-            ...state.devProcess,
-            status: 'stopped'
-          };
-          needsUpdate = true;
+
+        for (const [key, proc] of Object.entries(state.devProcesses)) {
+          const processExists = await isProcessRunning(proc.pid);
+
+          if (!processExists && proc.status === 'running') {
+            this.logger.warn('Detected stale process state, updating to stopped', {
+              pid: proc.pid,
+              directory: proc.directory
+            });
+
+            if (!updatedState.devProcesses) updatedState.devProcesses = {};
+            updatedState.devProcesses[key] = {
+              ...proc,
+              status: 'stopped'
+            };
+            needsUpdate = true;
+          }
         }
       }
 
@@ -316,7 +340,7 @@ export class StateManager {
           timestamp: new Date().toISOString(),
           version: '1.0.0'
         }, null, 2), 'utf8');
-        
+
         this.logger.info('State cleared');
       }
     } catch (error) {
@@ -358,29 +382,29 @@ export class StateManager {
   private async loadStateFromFile(): Promise<ServerState> {
     try {
       const data = await readFile(this.stateFilePath, 'utf8');
-      
+
       // 空ファイルチェック
       if (!data.trim()) {
         this.logger.warn('State file is empty, creating default state');
         throw new Error('Empty state file');
       }
-      
+
       // JSONパース
       try {
         const parsed = this.safeErrorHandler.safeJsonParse(data, {} as ServerState);
-        
+
         // 基本的な構造検証
         if (!parsed || typeof parsed !== 'object') {
           throw new Error('Invalid state structure');
         }
-        
+
         return parsed;
       } catch (parseError) {
-        this.logger.error('JSON parse error in state file, backing up and creating new state', { 
+        this.logger.error('JSON parse error in state file, backing up and creating new state', {
           parseError: parseError instanceof Error ? parseError.message : String(parseError),
           data: data.substring(0, 200) // 最初の200文字のみログ
         });
-        
+
         // 壊れたファイルをバックアップ
         const backupPath = this.stateFilePath + '.backup.' + Date.now();
         try {
@@ -389,7 +413,7 @@ export class StateManager {
         } catch (backupError) {
           this.logger.warn('Failed to backup corrupted state file', { backupError });
         }
-        
+
         throw new Error('JSON parse failed');
       }
     } catch (error) {
@@ -431,7 +455,7 @@ export class StateManager {
    */
   cleanup(): void {
     this.stopAutoSave();
-    this.removeLock().catch(() => {}); // エラーは無視
+    this.removeLock().catch(() => { }); // エラーは無視
     StateManager.instance = null;
   }
 }

@@ -15,31 +15,45 @@ export const getDevLogsSchema: Tool = {
         description: '取得行数（デフォルト：50）',
         minimum: 1,
         maximum: 1000
+      },
+      directory: {
+        type: 'string',
+        description: '対象ディレクトリ（複数起動時に指定）'
       }
     },
     additionalProperties: false
   }
 };
 
-export async function getDevLogs(args: { lines?: number }): Promise<string> {
+export async function getDevLogs(args: { lines?: number; directory?: string }): Promise<string> {
   try {
     const requestedLines = args.lines || 50;
-    logger.debug(`Getting dev server logs`, { lines: requestedLines });
-    
+
     const processManager = ProcessManager.getInstance();
-    const status = await processManager.getStatus();
-    
-    if (!status) {
+
+    // Determine which process to look at
+    const processInfo = processManager.getProcess(args.directory);
+
+    if (!processInfo) {
       return JSON.stringify({
         success: false,
-        message: 'Dev serverが起動していません。ログを取得できません。',
+        message: 'Dev serverが起動していません（または指定されたディレクトリが見つかりません）',
         logs: []
       });
     }
-    
-    const logManager = processManager.getLogManager();
+
+    const logManager = processManager.getLogManager(processInfo.directory);
+
+    if (!logManager) {
+      return JSON.stringify({
+        success: false,
+        message: 'ログマネージャーが見つかりませんでした',
+        logs: []
+      });
+    }
+
     const logs = await logManager.getLogs(requestedLines);
-    
+
     // Format logs for better readability
     const formattedLogs = logs.map(log => ({
       timestamp: log.timestamp.toISOString(),
@@ -47,9 +61,9 @@ export async function getDevLogs(args: { lines?: number }): Promise<string> {
       source: log.source,
       message: log.message
     }));
-    
+
     const logStats = logManager.getLogStats();
-    
+
     const result = {
       success: true,
       message: `${logs.length}行のログを取得しました`,
@@ -63,29 +77,18 @@ export async function getDevLogs(args: { lines?: number }): Promise<string> {
         returned: logs.length
       },
       process: {
-        pid: status.pid,
-        directory: status.directory,
-        status: status.status,
-        startTime: status.startTime
+        pid: processInfo.pid,
+        directory: processInfo.directory,
+        status: processInfo.status
       }
     };
-    
+
     if (logStats.errors > 0) {
       result.message += `\n⚠️ ${logStats.errors}個のエラーが含まれています`;
     }
-    
-    if (logStats.warnings > 0) {
-      result.message += `\n警告: ${logStats.warnings}個の警告が含まれています`;
-    }
-    
-    logger.debug('Dev server logs retrieved', { 
-      logsCount: logs.length,
-      errors: logStats.errors,
-      warnings: logStats.warnings
-    });
-    
+
     return JSON.stringify(result, null, 2);
-    
+
   } catch (error) {
     logger.error('Failed to get dev server logs', { error });
     return JSON.stringify({

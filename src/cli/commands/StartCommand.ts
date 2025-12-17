@@ -31,32 +31,32 @@ export class StartCommand implements CLICommand {
 
   async execute(args: string[], options: CLIOptions): Promise<void> {
     try {
-      const processManager = new ProcessManager();
+      const processManager = ProcessManager.getInstance();
       const envLoader = new EnvLoader();
       const contextManager = ProjectContextManager.getInstance();
-      
+
       // Determine target directory
       let targetDirectory: string | undefined;
       if (options._args && options._args.length > 0) {
         targetDirectory = options._args[0];
       }
-      
+
       // If no directory specified, use context or auto-detect
       if (!targetDirectory) {
         if (contextManager.isInitialized()) {
           const context = contextManager.getContext();
           targetDirectory = context.rootDirectory;
-          
+
           // Verify the project has a dev script
           if (!context.packageJson?.scripts?.dev) {
             // Try to find a suitable project
             const scanner = new ProjectScanner();
             const projects = await scanner.scanForProjects(context.rootDirectory);
-            
+
             if (projects.length === 0) {
               throw new CLIError('No projects with dev scripts found in current directory. Use "scan" command to see available projects.');
             }
-            
+
             // Use the highest priority project
             targetDirectory = projects[0].directory;
           }
@@ -68,9 +68,9 @@ export class StartCommand implements CLICommand {
       if (!envPath && contextManager.isInitialized()) {
         envPath = contextManager.getContext().envPath;
       }
-      
+
       const env = await envLoader.prepareEnvironment(envPath);
-      
+
       // Add port to environment if specified
       if (options.port) {
         env.PORT = options.port.toString();
@@ -78,14 +78,14 @@ export class StartCommand implements CLICommand {
 
       // Start dev server
       const devProcess = await processManager.startDevServer(targetDirectory, env);
-      
+
       // Wait a moment for potential port detection
       await new Promise(resolve => setTimeout(resolve, 2000));
-      
+
       // Get updated status
-      const status = await processManager.getStatus();
-      const finalProcess = status || devProcess;
-      
+      const allProcesses = await processManager.getStatus();
+      const finalProcess = allProcesses.find(p => p.directory === devProcess.directory) || devProcess;
+
       const output = this.formatter.formatStartResult(finalProcess, options.json);
       console.log(output);
 

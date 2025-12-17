@@ -22,7 +22,7 @@ export class HealthChecker {
   private startTime: number;
   private lastHealthCheck: HealthStatus | null = null;
   private healthCheckInterval: NodeJS.Timeout | null = null;
-  
+
   private constructor() {
     this.logger = Logger.getInstance();
     this.startTime = Date.now();
@@ -40,11 +40,11 @@ export class HealthChecker {
    */
   startPeriodicHealthCheck(intervalMs: number = 30000): void {
     this.logger.info('Starting periodic health checks', { intervalMs });
-    
+
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
     }
-    
+
     this.healthCheckInterval = setInterval(async () => {
       try {
         const status = await this.performHealthCheck();
@@ -75,7 +75,7 @@ export class HealthChecker {
     const timestamp = new Date().toISOString();
     const uptime = Date.now() - this.startTime;
     const memoryUsage = process.memoryUsage();
-    
+
     const checks = {
       memory: this.checkMemoryUsage(memoryUsage),
       processManager: await this.checkProcessManager(),
@@ -87,13 +87,16 @@ export class HealthChecker {
 
     try {
       const processManager = ProcessManager.getInstance();
-      const currentProcess = processManager.getCurrentProcess();
-      
-      if (currentProcess && currentProcess.status === 'running') {
+      const processes = await processManager.getStatus();
+
+      if (processes.some(p => p.status === 'running')) {
         devServerStatus = 'running';
-      } else if (currentProcess && currentProcess.status === 'error') {
+      }
+
+      const errorProcess = processes.find(p => p.status === 'error');
+      if (errorProcess) {
         devServerStatus = 'error';
-        lastError = 'Dev server process in error state';
+        lastError = `Dev server process (PID ${errorProcess.pid}) in error state`;
       }
     } catch (error) {
       devServerStatus = 'error';
@@ -127,7 +130,7 @@ export class HealthChecker {
   private checkMemoryUsage(memoryUsage: NodeJS.MemoryUsage): boolean {
     const maxHeapUsed = 500 * 1024 * 1024; // 500MB
     const maxRss = 750 * 1024 * 1024; // 750MB
-    
+
     return memoryUsage.heapUsed < maxHeapUsed && memoryUsage.rss < maxRss;
   }
 
@@ -138,7 +141,7 @@ export class HealthChecker {
     try {
       const processManager = ProcessManager.getInstance();
       // ProcessManagerが正常に動作するかテスト
-      processManager.getCurrentProcess();
+      await processManager.getStatus();
       return true;
     } catch (error) {
       this.logger.error('ProcessManager health check failed', { error });
@@ -152,15 +155,15 @@ export class HealthChecker {
   private async checkDevServer(): Promise<boolean> {
     try {
       const processManager = ProcessManager.getInstance();
-      const currentProcess = processManager.getCurrentProcess();
-      
+      const processes = await processManager.getStatus();
+
       // プロセスがない場合は正常（停止状態）
-      if (!currentProcess) {
+      if (processes.length === 0) {
         return true;
       }
-      
-      // プロセスがある場合は、正常に動作しているかチェック
-      return currentProcess.status !== 'error';
+
+      // 全てのプロセスがエラーでないことを確認
+      return !processes.some(p => p.status === 'error');
     } catch (error) {
       this.logger.error('Dev server health check failed', { error });
       return false;
@@ -172,7 +175,7 @@ export class HealthChecker {
    */
   async generateHealthReport(): Promise<string> {
     const status = await this.performHealthCheck();
-    
+
     const report = {
       status: status.isHealthy ? 'healthy' : 'unhealthy',
       timestamp: status.timestamp,
